@@ -1,0 +1,67 @@
+spring:
+  config:
+    import: optional:file:.env[.properties],optional:file:.env.local[.properties]
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: ${DATABASE_URL:${DB_URL:}}
+    driver-class-name: ${DB_DRIVER_CLASS:org.postgresql.Driver}
+    username: ${DB_USERNAME:}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${DB_MAX_POOL_SIZE:1}
+      minimum-idle: ${DB_MIN_IDLE:0}
+      idle-timeout: ${DB_IDLE_TIMEOUT_MS:10000}
+      max-lifetime: ${DB_MAX_LIFETIME_MS:300000}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:30000}
+      data-source-properties:
+        prepareThreshold: ${DB_PREPARE_THRESHOLD:0}
+        preferQueryMode: ${DB_PREFER_QUERY_MODE:simple}
+  jpa:
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    show-sql: ${JPA_SHOW_SQL:true}
+    defer-datasource-initialization: ${DEFER_DATASOURCE_INITIALIZATION:true}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  sql:
+    init:
+      mode: ${SQL_INIT_MODE:never}
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+
+logging:
+  level:
+    com.pisito.app.service.YouTubeVideoLinkService: DEBUG
+    com.pisito.app.service.TwitchVideoLinkService: DEBUG
+
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_MODEL:qwen3:8b}
+  embedding-model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+
+youtube:
+  oembed-base-url: https://www.youtube.com/oembed
+  data-api-base-url: https://www.googleapis.com/youtube/v3/search
+  web-search-base-url: https://www.youtube.com/results
+  data-api-key: ${YOUTUBE_DATA_API_KEY:}
+twitch:
+  oembed-base-url: https://www.twitch.tv/oembed
+reddit:
+  search-base-url: https://www.reddit.com/search.json
+  user-agent: HackatonPisito/1.0 (by u/pisito_app)
+search:
+  web-base-url: https://duckduckgo.com/html/
+app:
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  jwt:
+    secret: ${JWT_SECRET:bXktZGV2LXN1cGVyLXNlY3JldC1rZXktZm9yLWp3dC0zMi1ieXRlcy1taW4=}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
