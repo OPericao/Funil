@@ -6,7 +6,7 @@ spring:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
   datasource:
     url: ${DATABASE_URL:${DB_URL:}}
-    driver-class-name: ${DB_DRIVER_CLASS:org.postgresql.Driver}
+    driver-class-name: ${DB_DRIVER_CLASS:}
     username: ${DB_USERNAME:}
     password: ${DB_PASSWORD:}
     hikari:
@@ -23,9 +23,6 @@ spring:
       ddl-auto: ${JPA_DDL_AUTO:update}
     show-sql: ${JPA_SHOW_SQL:true}
     defer-datasource-initialization: ${DEFER_DATASOURCE_INITIALIZATION:true}
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
   sql:
     init:
       mode: ${SQL_INIT_MODE:never}

@@ -45,7 +45,7 @@ public class ExploreController {
 
     @PostMapping("/ask")
     public ExploreAnswerResponse ask(Authentication authentication, @Valid @RequestBody ExploreAskRequest request) {
-        return exploreService.ask(currentUserId(authentication), request.getQuestion());
+        return exploreService.ask(currentUserId(authentication), request);
     }
 
     private Long currentUserId(Authentication authentication) {

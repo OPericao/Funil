@@ -1,7 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import { askExplore, fetchEntryById, fetchExploreCollections, fetchExploreRecommendationsRefresh } from "../../../api/resources";
 import { isApiError } from "../../../api/client";
-import type { EntryItem, ExploreAnswer, ExploreCollectionItem, ExploreRecommendationItem } from "../../../types/resource";
+import type {
+  EntryItem,
+  ExploreActiveChip,
+  ExploreAnswer,
+  ExploreCollectionItem,
+  ExploreConversationTurn,
+  ExploreRecommendationItem,
+  ExploreSourceItem
+} from "../../../types/resource";
 import { readErrorMessage } from "../../../utils/error";
 import { BoltIcon, BookIcon, ChecklistIcon, LinkIcon, ListBulletIcon, MagnifyingGlassIcon, MusicalNoteIcon, RelationshipGraphIcon, TableIcon, TwitchIcon, YoutubeIcon } from "../../ui/icons";
 
@@ -12,23 +20,30 @@ type ExploreAssistantSectionProps = {
 const FALLBACK_RECOMMENDATIONS: ExploreRecommendationItem[] = [
   {
     type: "EXPLORE",
-    title: "Consolida tu tema principal",
-    description: "Agrupa lo que ya tienes sobre el tema mas repetido y saca una sintesis util.",
-    suggestedQuestion: "Resume lo mas importante de lo que tengo guardado",
+    title: "Mapa del tema",
+    description: "Agrupa el hilo principal de tus notas y conviertelo en una vista mas clara.",
+    suggestedQuestion: "Hazme un mapa claro de lo mas importante que tengo guardado",
     sources: [],
   },
   {
     type: "EXPLORE",
-    title: "Busca una conexion potente",
-    description: "Cruza dos ideas que aparecen a menudo para detectar relaciones que aun no has explicado bien.",
-    suggestedQuestion: "Que conexiones interesantes hay entre mis notas",
+    title: "Libros relacionados",
+    description: "Usa tus notas como perfil para descubrir lecturas que te puedan interesar.",
+    suggestedQuestion: "Basandote en mis notas, recomiendame libros que podrian gustarme",
     sources: [],
   },
   {
-    type: "OPTIMIZE",
-    title: "Prioriza el siguiente paso",
-    description: "Usa tu contenido mas reciente como punto de partida para decidir que merece seguimiento.",
-    suggestedQuestion: "Que deberia revisar a continuacion",
+    type: "EXPLORE",
+    title: "Variante posible",
+    description: "Busca una version distinta o un enfoque menos obvio de lo que ya guardaste.",
+    suggestedQuestion: "A partir de mis notas, enseñame variantes interesantes o enfoques relacionados",
+    sources: [],
+  },
+  {
+    type: "EXPLORE",
+    title: "Profundiza aqui",
+    description: "Convierte una nota concreta en una puerta de entrada para aprender algo mas especifico.",
+    suggestedQuestion: "A partir de mis notas, que deberia aprender o explorar para profundizar mas",
     sources: [],
   },
 ];
@@ -41,11 +56,19 @@ type AnswerBlock =
   | { type: "list"; items: string[] }
   | { type: "callout"; label: string; content: string };
 
+type ConversationMessage = {
+  role: "user" | "assistant";
+  content: string;
+  sources: ExploreSourceItem[];
+};
+
 export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSectionProps) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExploreAnswer | null>(null);
+  const [activeChip, setActiveChip] = useState<ExploreRecommendationItem | null>(null);
+  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [selectedSourceEntry, setSelectedSourceEntry] = useState<EntryItem | null>(null);
   const [selectedSourceLoading, setSelectedSourceLoading] = useState(false);
   const [recommendations, setRecommendations] = useState<ExploreRecommendationItem[]>(() => {
@@ -181,17 +204,38 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
     };
   }, [onUnauthorized]);
 
-  async function handleAsk(nextQuestion?: string) {
-    const resolvedQuestion = (nextQuestion ?? question).trim();
+  async function handleAsk(options?: {
+    nextQuestion?: string;
+    nextChip?: ExploreRecommendationItem | null;
+    resetThread?: boolean;
+  }) {
+    const resolvedQuestion = (options?.nextQuestion ?? question).trim();
     if (!resolvedQuestion) {
       return;
     }
 
+    const nextActiveChip = options?.nextChip === undefined ? activeChip : options.nextChip;
+    const resetThread = options?.resetThread ?? false;
+    const history: ExploreConversationTurn[] = resetThread
+      ? []
+      : conversation.map((message) => ({ role: message.role, content: message.content }));
+
     try {
       setLoading(true);
       setError(null);
-      const response = await askExplore(resolvedQuestion);
-      setQuestion(resolvedQuestion);
+      const response = await askExplore({
+        question: resolvedQuestion,
+        sourceEntryIds: collectSourceEntryIds(nextActiveChip, resetThread ? null : result),
+        activeChip: toActiveChip(nextActiveChip),
+        history
+      });
+      setConversation([
+        ...(resetThread ? [] : conversation),
+        { role: "user", content: resolvedQuestion, sources: [] },
+        { role: "assistant", content: response.answer, sources: response.sources }
+      ]);
+      setActiveChip(nextActiveChip);
+      setQuestion("");
       setResult(response);
       setSelectedSourceEntry(null);
     } catch (requestError) {
@@ -315,7 +359,7 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
   }
 
   const visibleRecommendations = recommendationsLoading ? FALLBACK_RECOMMENDATIONS : recommendations;
-  const answerBlocks = useMemo(() => parseAnswerBlocks(result?.answer ?? ""), [result?.answer]);
+  const hasThread = conversation.length > 0;
   const flagExploreChips = useMemo(
     () => [
       { key: "YOUTUBE", label: "YouTube", prompt: "Que videos de YouTube tengo guardados y por cual deberia empezar", icon: YoutubeIcon },
@@ -337,12 +381,65 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
           Pregunta, resume, pide recomendaciones o explora conexiones dentro de tus notas.
         </p>
 
+        {activeChip || hasThread ? (
+          <section className="mt-4 rounded-card border border-teal-200 bg-teal-50/70 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">
+                  {activeChip ? "Chip activa" : "Conversacion activa"}
+                </p>
+                <p className="mt-2 text-sm font-bold text-slate-900">
+                  {activeChip ? activeChip.title : "Exploracion en curso"}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-700">
+                  {activeChip
+                    ? activeChip.description
+                    : "Las siguientes preguntas seguiran en el mismo hilo hasta que lo cierres."}
+                </p>
+
+                {activeChip && activeChip.sources.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {activeChip.sources.map((source) => (
+                      <button
+                        key={`active-chip-source-${source.entryId}`}
+                        type="button"
+                        className="rounded-full border border-teal-300 bg-white px-2.5 py-1 text-xs font-semibold text-teal-800 transition hover:border-teal-400 hover:bg-teal-100"
+                        onClick={() => void handleOpenSource(source.entryId)}
+                      >
+                        {source.title}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                className="inline-flex h-9 items-center justify-center rounded-control border border-teal-200 bg-white px-3 text-sm font-semibold text-teal-800 transition hover:border-teal-300 hover:bg-teal-100"
+                onClick={() => {
+                  setActiveChip(null);
+                  setConversation([]);
+                  setResult(null);
+                  setSelectedSourceEntry(null);
+                  setQuestion("");
+                }}
+              >
+                Cerrar hilo
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         <div className="mt-4 grid gap-3">
           <textarea
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
             className="min-h-32 w-full rounded-card border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-            placeholder="Ejemplo: que tengo guardado sobre embeddings locales y Ollama"
+            placeholder={
+              hasThread
+                ? "Sigue preguntando dentro de este hilo"
+                : "Ejemplo: que tengo guardado sobre embeddings locales y Ollama"
+            }
           />
 
           <div className="flex flex-wrap gap-2">
@@ -353,7 +450,12 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
                   key={`chip-${recommendation.title}-${recommendation.suggestedQuestion}`}
                   type="button"
                   className={style.sourceClassName}
-                  onClick={() => void handleAsk(recommendation.suggestedQuestion)}
+                  onClick={() =>
+                    void handleAsk({
+                      nextQuestion: recommendation.suggestedQuestion,
+                      nextChip: recommendation,
+                      resetThread: true
+                    })}
                   disabled={loading}
                 >
                   {recommendation.title}
@@ -370,7 +472,7 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
                   key={chip.key}
                   type="button"
                   className="inline-flex h-9 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                  onClick={() => void handleAsk(chip.prompt)}
+                  onClick={() => void handleAsk({ nextQuestion: chip.prompt, nextChip: null, resetThread: true })}
                   disabled={loading}
                 >
                   <Icon className="h-4 w-4" />
@@ -388,7 +490,7 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
                 onClick={() => setRecommendationsExpanded((current) => !current)}
               >
                 <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                  Recomendaciones del asistente
+                    Chips del asistente
                 </span>
                 <span className="text-sm font-semibold text-slate-700">
                   {recommendationsExpanded ? "Ocultar" : "Ver detalle"}
@@ -400,7 +502,7 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
                 onClick={() => void handleRefreshRecommendations()}
                 disabled={recommendationsLoading}
               >
-                {recommendationsLoading ? "Cargando..." : "Nuevas recomendaciones"}
+                {recommendationsLoading ? "Cargando..." : "Nuevos chips"}
               </button>
             </div>
 
@@ -450,10 +552,15 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
                           <button
                             type="button"
                             className={`${style.buttonClassName} w-full`}
-                            onClick={() => void handleAsk(recommendation.suggestedQuestion)}
+                            onClick={() =>
+                              void handleAsk({
+                                nextQuestion: recommendation.suggestedQuestion,
+                                nextChip: recommendation,
+                                resetThread: true
+                              })}
                             disabled={loading}
                           >
-                            {recommendation.type === "OPTIMIZE" ? "Optimizar esto" : "Explorar esto"}
+                            Abrir chip
                           </button>
                         </div>
                       </div>
@@ -525,7 +632,12 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
                           <button
                             type="button"
                             className={`${style.buttonClassName} w-full`}
-                            onClick={() => void handleAsk(collection.suggestedQuestion)}
+                            onClick={() =>
+                              void handleAsk({
+                                nextQuestion: collection.suggestedQuestion,
+                                nextChip: null,
+                                resetThread: true
+                              })}
                             disabled={loading}
                           >
                             Abrir bloque
@@ -546,7 +658,7 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
               onClick={() => void handleAsk()}
               disabled={!canAsk}
             >
-              {loading ? "Consultando..." : "Preguntar"}
+              {loading ? "Consultando..." : hasThread ? "Seguir hilo" : "Preguntar"}
             </button>
           </div>
         </div>
@@ -558,7 +670,7 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
         </section>
       ) : null}
 
-      {result ? (
+      {hasThread ? (
         <>
           {selectedSourceLoading ? (
             <section className="rounded-card border border-[#F0F0F0] bg-white/85 p-5 shadow-card">
@@ -626,67 +738,117 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
           ) : null}
 
           <section className="rounded-card border border-[#F0F0F0] bg-white/85 p-5 shadow-card">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Respuesta</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Conversacion</p>
             <div className="mt-4 grid gap-3">
-              {answerBlocks.map((block, index) => {
-                if (block.type === "list") {
-                  return (
-                    <article key={`answer-list-${index}`} className="rounded-card border border-slate-200 bg-slate-50 p-4">
-                      <ul className="grid gap-2">
-                        {block.items.map((item) => (
-                          <li key={`${index}-${item}`} className="flex gap-3 text-sm leading-6 text-slate-800">
-                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </article>
-                  );
-                }
-
-                if (block.type === "callout") {
-                  return (
-                    <article key={`answer-callout-${index}`} className="rounded-card border border-teal-200 bg-teal-50/70 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700">{block.label}</p>
-                      <p className="mt-2 text-sm leading-7 text-slate-800">{block.content}</p>
-                    </article>
-                  );
-                }
-
-                return (
-                  <article key={`answer-paragraph-${index}`} className="rounded-card border border-slate-200 bg-white p-4">
-                    <p className="text-sm leading-7 text-slate-800">{block.content}</p>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="rounded-card border border-[#F0F0F0] bg-white/85 p-5 shadow-card">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Fuentes</p>
-            <div className="mt-3 grid gap-3">
-              {result.sources.map((source) => (
-                <article key={source.entryId} className="rounded-card border border-slate-200 bg-slate-50 p-4">
-                  <button
-                    type="button"
-                    className="text-left"
-                    onClick={() => void handleOpenSource(source.entryId)}
+              {conversation.map((message, messageIndex) =>
+                message.role === "user" ? (
+                  <article
+                    key={`conversation-user-${messageIndex}`}
+                    className="ml-auto max-w-3xl rounded-card border border-slate-200 bg-slate-900 p-4 text-white shadow-sm"
                   >
-                    <p className="text-sm font-bold text-slate-900 underline decoration-slate-300 underline-offset-4 transition hover:text-teal-800 hover:decoration-teal-500">
-                      {source.title}
-                    </p>
-                  </button>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{source.snippet}</p>
-                </article>
-              ))}
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">Tu pregunta</p>
+                    <p className="mt-2 text-sm leading-7 text-white">{message.content}</p>
+                  </article>
+                ) : (
+                  <div key={`conversation-assistant-${messageIndex}`} className="grid gap-3">
+                    {parseAnswerBlocks(message.content).map((block, blockIndex) => {
+                      if (block.type === "list") {
+                        return (
+                          <article key={`answer-list-${messageIndex}-${blockIndex}`} className="rounded-card border border-slate-200 bg-slate-50 p-4">
+                            <ul className="grid gap-2">
+                              {block.items.map((item) => (
+                                <li key={`${messageIndex}-${blockIndex}-${item}`} className="flex gap-3 text-sm leading-6 text-slate-800">
+                                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
+                                  <span>{renderAnswerWithSources(item, message.sources, handleOpenSource)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </article>
+                        );
+                      }
+
+                      if (block.type === "callout") {
+                        return (
+                          <article key={`answer-callout-${messageIndex}-${blockIndex}`} className="rounded-card border border-teal-200 bg-teal-50/70 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700">{block.label}</p>
+                            <div className="mt-2 text-sm leading-7 text-slate-800">
+                              {renderAnswerWithSources(block.content, message.sources, handleOpenSource)}
+                            </div>
+                          </article>
+                        );
+                      }
+
+                      return (
+                        <article key={`answer-paragraph-${messageIndex}-${blockIndex}`} className="rounded-card border border-slate-200 bg-white p-4">
+                          <div className="text-sm leading-7 text-slate-800">
+                            {renderAnswerWithSources(block.content, message.sources, handleOpenSource)}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )
+              )}
             </div>
           </section>
+
+          {result ? (
+            <section className="rounded-card border border-[#F0F0F0] bg-white/85 p-5 shadow-card">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Fuentes</p>
+              <div className="mt-3 grid gap-3">
+                {result.sources.map((source) => (
+                  <article key={source.entryId} className="rounded-card border border-slate-200 bg-slate-50 p-4">
+                    <button
+                      type="button"
+                      className="text-left"
+                      onClick={() => void handleOpenSource(source.entryId)}
+                    >
+                      <p className="text-sm font-bold text-slate-900 underline decoration-slate-300 underline-offset-4 transition hover:text-teal-800 hover:decoration-teal-500">
+                        {source.title}
+                      </p>
+                    </button>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">{source.snippet}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </>
       ) : (
         emptyState
       )}
     </div>
   );
+}
+
+function toActiveChip(chip: ExploreRecommendationItem | null): ExploreActiveChip | undefined {
+  if (!chip) {
+    return undefined;
+  }
+
+  return {
+    type: chip.type,
+    title: chip.title,
+    description: chip.description,
+    suggestedQuestion: chip.suggestedQuestion
+  };
+}
+
+function collectSourceEntryIds(
+  activeChip: ExploreRecommendationItem | null,
+  result: ExploreAnswer | null
+): number[] {
+  const sourceIds = new Set<number>();
+
+  for (const source of activeChip?.sources ?? []) {
+    sourceIds.add(source.entryId);
+  }
+
+  for (const source of result?.sources ?? []) {
+    sourceIds.add(source.entryId);
+  }
+
+  return Array.from(sourceIds);
 }
 
 function parseAnswerBlocks(answer: string): AnswerBlock[] {
@@ -720,4 +882,62 @@ function parseAnswerBlocks(answer: string): AnswerBlock[] {
       content: lines.join(" "),
     };
   });
+}
+
+function renderAnswerWithSources(
+  text: string,
+  sources: ExploreSourceItem[],
+  onOpenSource: (entryId: number) => Promise<void>
+): ReactNode {
+  if (!text.trim() || sources.length === 0) {
+    return text;
+  }
+
+  const normalizedSources = sources
+    .map((source) => ({
+      ...source,
+      marker: `[${source.title}]`
+    }))
+    .sort((left, right) => right.marker.length - left.marker.length);
+
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    let matchedSource: (typeof normalizedSources)[number] | null = null;
+    let matchedIndex = -1;
+
+    for (const source of normalizedSources) {
+      const candidateIndex = text.indexOf(source.marker, cursor);
+      if (candidateIndex >= 0 && (matchedIndex === -1 || candidateIndex < matchedIndex)) {
+        matchedIndex = candidateIndex;
+        matchedSource = source;
+      }
+    }
+
+    if (!matchedSource || matchedIndex < 0) {
+      parts.push(text.slice(cursor));
+      break;
+    }
+
+    if (matchedIndex > cursor) {
+      parts.push(text.slice(cursor, matchedIndex));
+    }
+
+    parts.push(
+      <button
+        key={`${matchedSource.entryId}-${matchedIndex}`}
+        type="button"
+        className="mx-0.5 inline-flex items-center rounded-full border border-teal-500 bg-teal-50 px-2.5 py-1 align-middle text-xs font-bold tracking-[0.01em] text-teal-900 shadow-sm transition hover:-translate-y-[1px] hover:border-teal-600 hover:bg-teal-100 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-teal-200"
+        onClick={() => void onOpenSource(matchedSource.entryId)}
+        title={`Abrir ${matchedSource.title}`}
+      >
+        {matchedSource.title}
+      </button>
+    );
+
+    cursor = matchedIndex + matchedSource.marker.length;
+  }
+
+  return parts.map((part, index) => <Fragment key={index}>{part}</Fragment>);
 }

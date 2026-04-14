@@ -1,9 +1,12 @@
 package com.pisito.app.service;
 
 import com.pisito.app.controller.dto.entry.EntryResponse;
+import com.pisito.app.controller.dto.explore.ExploreActiveChipRequest;
+import com.pisito.app.controller.dto.explore.ExploreAskRequest;
 import com.pisito.app.controller.dto.explore.ExploreAnswerResponse;
 import com.pisito.app.controller.dto.explore.ExploreCollectionItemResponse;
 import com.pisito.app.controller.dto.explore.ExploreCollectionsResponse;
+import com.pisito.app.controller.dto.explore.ExploreConversationTurnRequest;
 import com.pisito.app.controller.dto.explore.ExploreRecommendationItemResponse;
 import com.pisito.app.controller.dto.explore.ExploreRecommendationsResponse;
 import com.pisito.app.controller.dto.explore.ExploreSourceResponse;
@@ -15,10 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,11 +43,9 @@ public class ExploreService {
     }
 
     @Transactional(readOnly = true)
-    public ExploreAnswerResponse ask(Long userId, String rawQuestion) {
-        String question = trimRequired(rawQuestion, "question is required");
-        List<EntryResponse> relevantEntries = entryService.search(userId, question).stream()
-            .limit(5)
-            .toList();
+    public ExploreAnswerResponse ask(Long userId, ExploreAskRequest request) {
+        String question = trimRequired(request.getQuestion(), "question is required");
+        List<EntryResponse> relevantEntries = resolveContextEntries(userId, question, request);
 
         if (relevantEntries.isEmpty()) {
             return new ExploreAnswerResponse(
@@ -55,42 +56,42 @@ public class ExploreService {
         }
 
         List<ExploreSourceResponse> sources = relevantEntries.stream()
-            .map(entry -> new ExploreSourceResponse(entry.id(), entry.title(), buildSnippet(entry)))
+            .map(this::toSource)
             .toList();
 
-        String prompt = buildPrompt(question, sources);
-        String answer;
         try {
-            answer = sanitizePlainText(ollamaService.generate(prompt));
+            String answer = sanitizePlainText(ollamaService.generate(buildAnswerPrompt(question, relevantEntries, request)));
+            return new ExploreAnswerResponse(question, answer, sources);
         } catch (ResponseStatusException ex) {
             if (ex.getStatusCode().value() == HttpStatus.BAD_GATEWAY.value()) {
-                answer = "No pude consultar Ollama ahora mismo. Estas son las notas mas relevantes que encontre.";
-            } else {
-                throw ex;
+                return new ExploreAnswerResponse(
+                    question,
+                    "No pude consultar Ollama ahora mismo. Estas son las notas mas relevantes que encontre.",
+                    sources
+                );
             }
+            throw ex;
         }
-
-        return new ExploreAnswerResponse(question, answer, sources);
     }
 
     @Transactional(readOnly = true)
     public ExploreSuggestionsResponse suggestions(Long userId) {
-        List<EntryResponse> recentEntries = entryService.findAll(userId).stream()
+        List<EntryResponse> entries = entryService.findAll(userId).stream()
             .limit(10)
             .toList();
 
-        if (recentEntries.isEmpty()) {
+        if (entries.isEmpty()) {
             return new ExploreSuggestionsResponse(List.of(
                 "Que temas estoy guardando ultimamente",
-                "Que notas relacionadas deberia revisar ahora",
-                "Resume lo mas importante de mi base personal",
-                "Que ideas estan menos conectadas en mis notas"
+                "Que conexiones interesantes hay en mis notas",
+                "Que deberia descubrir despues",
+                "Que merece la pena profundizar primero"
             ));
         }
 
         try {
-            String response = ollamaService.generate(buildSuggestionsPrompt(recentEntries));
-            List<String> parsedSuggestions = parseSuggestions(response);
+            String rawResponse = ollamaService.generate(buildSuggestionsPrompt(entries));
+            List<String> parsedSuggestions = parseSuggestions(rawResponse);
             if (!parsedSuggestions.isEmpty()) {
                 return new ExploreSuggestionsResponse(parsedSuggestions);
             }
@@ -100,27 +101,26 @@ public class ExploreService {
             }
         }
 
-        return new ExploreSuggestionsResponse(buildFallbackSuggestions(recentEntries));
+        return new ExploreSuggestionsResponse(buildFallbackSuggestions(entries));
     }
 
     @Transactional(readOnly = true)
     public ExploreRecommendationsResponse recommendations(Long userId, String refreshToken) {
-        List<EntryResponse> recentEntries = entryService.findAll(userId).stream()
-            .limit(10)
+        List<EntryResponse> entries = entryService.findAll(userId).stream()
+            .limit(18)
             .toList();
 
-        if (recentEntries.isEmpty()) {
+        if (entries.isEmpty()) {
             return new ExploreRecommendationsResponse(List.of());
         }
 
-        List<ExploreRecommendationItemResponse> fallbackRecommendations = buildFallbackRecommendations(recentEntries);
-        RecommendationMix mix = resolveRecommendationMix(refreshToken);
+        List<ExploreRecommendationItemResponse> fallbackRecommendations = buildFallbackRecommendations(entries);
 
         try {
-            String response = ollamaService.generate(buildRecommendationsPrompt(recentEntries, mix, refreshToken));
-            List<ExploreRecommendationItemResponse> parsed = parseRecommendations(response, recentEntries);
-            if (!parsed.isEmpty()) {
-                return new ExploreRecommendationsResponse(parsed);
+            String rawResponse = ollamaService.generate(buildRecommendationsPrompt(entries, refreshToken));
+            List<ExploreRecommendationItemResponse> parsedRecommendations = parseRecommendations(rawResponse, entries);
+            if (!parsedRecommendations.isEmpty()) {
+                return new ExploreRecommendationsResponse(parsedRecommendations);
             }
         } catch (ResponseStatusException ex) {
             if (ex.getStatusCode().value() != HttpStatus.BAD_GATEWAY.value()) {
@@ -138,38 +138,29 @@ public class ExploreService {
             return new ExploreCollectionsResponse(List.of());
         }
 
-        List<ExploreCollectionItemResponse> collections = new ArrayList<>();
         List<String> topics = extractTopics(entries);
+        List<ExploreCollectionItemResponse> collections = new ArrayList<>();
 
-        for (String topic : topics) {
+        for (String topic : topics.stream().limit(2).toList()) {
             List<ExploreSourceResponse> sources = findSourcesForTopic(entries, topic);
-            if (sources.size() < 2) {
-                continue;
-            }
-
-            collections.add(new ExploreCollectionItemResponse(
-                "THEME",
-                topic,
-                "Bloque tematico con notas que apuntan a la misma idea y sirven para entrar rapido en este tema.",
-                "Ayudame a explorar lo mas importante sobre " + topic + " y por donde empezar",
-                sources.size(),
-                sources
-            ));
-
-            if (collections.size() == 2) {
-                break;
+            if (sources.size() >= 2) {
+                collections.add(new ExploreCollectionItemResponse(
+                    "THEME",
+                    topic,
+                    "Bloque tematico para entrar rapido en un foco repetido de tu base.",
+                    "Ayudame a explorar lo mas importante sobre " + topic,
+                    sources.size(),
+                    sources
+                ));
             }
         }
 
-        List<ExploreSourceResponse> recentSources = entries.stream()
-            .limit(3)
-            .map(entry -> new ExploreSourceResponse(entry.id(), entry.title(), buildSnippet(entry)))
-            .toList();
+        List<ExploreSourceResponse> recentSources = entries.stream().limit(3).map(this::toSource).toList();
         if (!recentSources.isEmpty()) {
             collections.add(new ExploreCollectionItemResponse(
                 "RECENT",
-                "Lo ultimo que has guardado",
-                "Un bloque corto para retomar rapido tus notas mas recientes y seguir desde ahi.",
+                "Lo ultimo que guardaste",
+                "Un bloque corto para retomar rapido tus notas mas recientes.",
                 "Que merece la pena explorar primero de lo ultimo que he guardado",
                 recentSources.size(),
                 recentSources
@@ -179,29 +170,19 @@ public class ExploreService {
         if (topics.size() >= 2) {
             String leftTopic = topics.get(0);
             String rightTopic = topics.get(1);
-            List<ExploreSourceResponse> bridgeSources = new ArrayList<>();
-            bridgeSources.addAll(findSourcesForTopic(entries, leftTopic).stream().limit(2).toList());
-            bridgeSources.addAll(findSourcesForTopic(entries, rightTopic).stream().limit(2).toList());
-            List<ExploreSourceResponse> distinctBridgeSources = bridgeSources.stream()
-                .collect(Collectors.toMap(
-                    ExploreSourceResponse::entryId,
-                    Function.identity(),
-                    (left, _right) -> left,
-                    LinkedHashMap::new
-                ))
-                .values()
-                .stream()
-                .limit(4)
-                .toList();
+            List<ExploreSourceResponse> sources = new ArrayList<>();
+            sources.addAll(findSourcesForTopic(entries, leftTopic).stream().limit(2).toList());
+            sources.addAll(findSourcesForTopic(entries, rightTopic).stream().limit(2).toList());
+            List<ExploreSourceResponse> distinctSources = dedupeSources(sources).stream().limit(4).toList();
 
-            if (distinctBridgeSources.size() >= 2) {
+            if (distinctSources.size() >= 2) {
                 collections.add(new ExploreCollectionItemResponse(
                     "BRIDGE",
                     leftTopic + " y " + rightTopic,
-                    "Un cruce de dos focos de tu base para comparar ideas y descubrir relaciones utiles.",
+                    "Cruce entre dos zonas de tu base para encontrar relaciones utiles.",
                     "Como se conectan " + leftTopic + " y " + rightTopic + " en mis notas",
-                    distinctBridgeSources.size(),
-                    distinctBridgeSources
+                    distinctSources.size(),
+                    distinctSources
                 ));
             }
         }
@@ -215,53 +196,118 @@ public class ExploreService {
             ))
             .values()
             .stream()
-            .sorted(Comparator
-                .comparingInt(ExploreCollectionItemResponse::entryCount)
-                .reversed()
-                .thenComparing(ExploreCollectionItemResponse::title))
             .limit(4)
             .toList();
 
-        if (!uniqueCollections.isEmpty()) {
-            return new ExploreCollectionsResponse(uniqueCollections);
-        }
-
-        EntryResponse latestEntry = entries.getFirst();
-        return new ExploreCollectionsResponse(List.of(
-            new ExploreCollectionItemResponse(
-                "RECENT",
-                "Punto de partida",
-                "Un bloque simple para volver a entrar en tu base desde una nota reciente.",
-                "Que merece la pena explorar a partir de " + latestEntry.title(),
-                1,
-                List.of(new ExploreSourceResponse(latestEntry.id(), latestEntry.title(), buildSnippet(latestEntry)))
-            )
-        ));
+        return new ExploreCollectionsResponse(uniqueCollections);
     }
 
-    private String buildPrompt(String question, List<ExploreSourceResponse> sources) {
+    private List<EntryResponse> resolveContextEntries(Long userId, String question, ExploreAskRequest request) {
+        Map<Long, EntryResponse> entriesById = new LinkedHashMap<>();
+
+        for (Long sourceEntryId : request.getSourceEntryIds()) {
+            if (sourceEntryId == null) {
+                continue;
+            }
+            try {
+                EntryResponse entry = entryService.findById(userId, sourceEntryId);
+                entriesById.put(entry.id(), entry);
+            } catch (ResponseStatusException ex) {
+                if (ex.getStatusCode().value() != HttpStatus.NOT_FOUND.value()) {
+                    throw ex;
+                }
+            }
+        }
+
+        addEntries(entriesById, entryService.search(userId, question), 5);
+
+        ExploreActiveChipRequest activeChip = request.getActiveChip();
+        if (activeChip != null) {
+            if (StringUtils.hasText(activeChip.getTitle())) {
+                addEntries(entriesById, entryService.search(userId, activeChip.getTitle()), 3);
+            }
+            if (StringUtils.hasText(activeChip.getSuggestedQuestion())) {
+                addEntries(entriesById, entryService.search(userId, activeChip.getSuggestedQuestion()), 3);
+            }
+        }
+
+        if (entriesById.isEmpty()) {
+            addEntries(entriesById, entryService.findAll(userId), 4);
+        }
+
+        return entriesById.values().stream().limit(6).toList();
+    }
+
+    private void addEntries(Map<Long, EntryResponse> entriesById, List<EntryResponse> candidates, int limit) {
+        if (candidates == null || candidates.isEmpty()) {
+            return;
+        }
+
+        candidates.stream()
+            .limit(limit)
+            .forEach(entry -> entriesById.putIfAbsent(entry.id(), entry));
+    }
+
+    private String buildAnswerPrompt(String question, List<EntryResponse> entries, ExploreAskRequest request) {
         StringBuilder builder = new StringBuilder();
         builder.append("""
-            Eres un asistente que responde usando unicamente las notas proporcionadas.
-            Responde en espanol de forma clara y breve.
-            Si la evidencia es limitada, dilo explicitamente.
-            Cita las notas por su titulo entre corchetes cuando apoyes una afirmacion.
-            Usa solo texto plano.
-            No uses markdown.
-            No pongas titulos ni palabras entre ** **, __ __, * * o formatos similares.
+            Eres un asistente de exploracion para una base personal de notas.
 
-            Pregunta:
+            Reglas:
+            - Apoyate primero en las notas proporcionadas.
+            - Si hay un chip activo, tratalo como la direccion principal de la conversacion.
+            - Si hay historial, continua el hilo con naturalidad y sin reiniciar el tema.
+            - Si la pregunta pide resumen, conexion o explicacion, usa solo lo que se desprende de las notas.
+            - Si la pregunta pide descubrir cosas nuevas, recomendar libros, recetas, canciones, autores, animales,
+              herramientas, ideas o variantes, puedes usar las notas como perfil de intereses y anadir sugerencias nuevas.
+            - Intenta aportar conocimiento nuevo, complementos, tecnica, variantes o siguientes pasos cuando tenga sentido.
+            - Si el usuario pregunta por un detalle derivado de una recomendacion anterior, respondelo como continuacion natural.
+            - Cuando una sugerencia nueva no salga literalmente de las notas, dilo claramente.
+            - No inventes que una nota contiene algo que no contiene.
+            - Cita las notas por su titulo exacto entre corchetes cuando una afirmacion salga de ellas.
+            - Usa solo texto plano.
             """);
+
+        ExploreActiveChipRequest activeChip = request.getActiveChip();
+        if (activeChip != null) {
+            builder.append("\nChip activo:\n");
+            if (StringUtils.hasText(activeChip.getType())) {
+                builder.append("- Tipo: ").append(activeChip.getType().trim()).append("\n");
+            }
+            if (StringUtils.hasText(activeChip.getTitle())) {
+                builder.append("- Titulo: ").append(activeChip.getTitle().trim()).append("\n");
+            }
+            if (StringUtils.hasText(activeChip.getDescription())) {
+                builder.append("- Enfoque: ").append(activeChip.getDescription().trim()).append("\n");
+            }
+            if (StringUtils.hasText(activeChip.getSuggestedQuestion())) {
+                builder.append("- Pregunta inicial: ").append(activeChip.getSuggestedQuestion().trim()).append("\n");
+            }
+        }
+
+        List<ExploreConversationTurnRequest> history = sanitizeHistory(request.getHistory());
+        if (!history.isEmpty()) {
+            builder.append("\nHistorial reciente:\n");
+            for (ExploreConversationTurnRequest turn : history) {
+                builder.append("- ")
+                    .append(normalizeConversationRole(turn.getRole()))
+                    .append(": ")
+                    .append(turn.getContent().trim())
+                    .append("\n");
+            }
+        }
+
+        builder.append("\nPregunta actual:\n");
         builder.append(question).append("\n\n");
         builder.append("Notas relevantes:\n");
 
-        for (int index = 0; index < sources.size(); index += 1) {
-            ExploreSourceResponse source = sources.get(index);
+        for (int index = 0; index < entries.size(); index += 1) {
+            EntryResponse entry = entries.get(index);
             builder.append(index + 1)
                 .append(". [")
-                .append(source.title())
+                .append(entry.title())
                 .append("] ")
-                .append(source.snippet())
+                .append(buildDetailedSnippet(entry))
                 .append("\n");
         }
 
@@ -269,35 +315,41 @@ public class ExploreService {
         return builder.toString();
     }
 
-    private String buildRecommendationsPrompt(List<EntryResponse> entries, RecommendationMix mix, String refreshToken) {
+    private String buildRecommendationsPrompt(List<EntryResponse> entries, String refreshToken) {
         StringBuilder builder = new StringBuilder();
         builder.append("""
-            Eres un asistente que recomienda que explorar dentro de una base personal de conocimiento.
-            Devuelve exactamente 4 recomendaciones en espanol.
-            Cada recomendacion debe tener este formato exacto:
+            Eres un motor de chips para explorar una base personal de conocimiento.
+            Tu trabajo es detectar oportunidades interesantes aunque el tema sea aleatorio.
+
+            Devuelve exactamente 4 chips en espanol usando este formato exacto:
             TYPE: EXPLORE o OPTIMIZE
-            TITLE: ...
-            DESCRIPTION: ...
-            QUESTION: ...
+            TITLE: maximo 3 palabras
+            DESCRIPTION: una explicacion concreta de por que este chip aporta valor
+            QUESTION: una pregunta o peticion lista para lanzar al asistente
             SOURCES: titulo 1 | titulo 2
             END
 
+            Mezcla intenciones cuando tenga sentido:
+            - descubrir algo nuevo relacionado
+            - profundizar en una variante o enfoque mas especifico
+            - complementar una nota con algo que le falta
+            - conectar ideas entre notas
+            - convertir algo en siguiente paso practico
+
             Reglas:
-            - TYPE debe ser EXPLORE para recomendaciones de busqueda, descubrimiento o profundizacion.
-            - TYPE debe ser OPTIMIZE para recomendaciones de mejora, claridad o enriquecimiento de notas.
-            - TITLE debe ser corto y accionable.
-            - DESCRIPTION debe explicar por que merece la pena revisarlo.
-            - QUESTION debe ser una consulta natural que el usuario pueda lanzar al asistente.
-            - SOURCES debe usar solo titulos exactos de la lista proporcionada.
-            - Debe haber exactamente %d recomendaciones EXPLORE.
-            - Debe haber exactamente %d recomendaciones OPTIMIZE.
-            - Mezcla ambos tipos sin agruparlos siempre igual.
-            - Prioriza descubrimiento, proximidad tematica, utilidad practica y huecos interesantes.
-            - No inventes titulos.
-            - La variacion de esta tanda viene marcada por la semilla: %s.
+            - No te encierres en dominios faciles. Si las notas hablan de animales, ciencia, cocina, historia,
+              software o cualquier otro tema, adapta los chips a ese dominio.
+            - Los 4 chips deben priorizar expansion, descubrimiento o profundizacion.
+            - Intenta que al menos 3 chips aporten informacion nueva o direcciones nuevas, no solo reorganicen lo ya guardado.
+            - Si detectas una nota muy concreta, puedes proponer un chip de complemento y otro de variante.
+            - TITLE debe sonar a chip corto y accionable.
+            - QUESTION debe ser especifica y util.
+            - SOURCES debe usar solo titulos exactos de la lista.
+            - Usa TYPE=EXPLORE por defecto. Solo usa TYPE=OPTIMIZE si no encuentras una expansion interesante mejor.
+            - Usa la semilla %s solo para variar el enfoque y evitar repeticiones.
 
             Notas disponibles:
-            """.formatted(mix.exploreCount(), mix.optimizeCount(), refreshToken == null ? "base" : refreshToken));
+            """.formatted(refreshToken == null ? "base" : refreshToken));
 
         for (int index = 0; index < entries.size(); index += 1) {
             EntryResponse entry = entries.get(index);
@@ -313,19 +365,14 @@ public class ExploreService {
                 builder.append(" | Tags: ").append(tags);
             }
 
-            String snippet = buildSnippet(entry);
-            if (StringUtils.hasText(snippet)) {
-                builder.append(" | Contenido: ").append(snippet);
-            }
-            builder.append("\n");
+            builder.append(" | Contenido: ").append(buildDetailedSnippet(entry)).append("\n");
         }
 
-        builder.append("\nRecomendaciones:");
+        builder.append("\nChips:");
         return builder.toString();
     }
 
     private String buildSuggestionsPrompt(List<EntryResponse> entries) {
-        List<String> topics = extractTopics(entries);
         StringBuilder builder = new StringBuilder();
         builder.append("""
             Eres un asistente que propone preguntas breves y utiles para explorar una base personal de notas.
@@ -333,105 +380,74 @@ public class ExploreService {
             Reglas:
             - Cada sugerencia debe ser una sola pregunta corta.
             - No repitas ideas.
-            - Basate en los temas reales de las notas.
-            - Usa nombres concretos de temas, herramientas o conceptos presentes en las notas.
-            - Evita preguntas genericas como "que temas tengo" o "que conexiones hay".
-            - Evita mencionar "notas", "base personal" o "contenido" salvo que sea imprescindible.
-            - Haz que cada sugerencia tenga una intencion distinta: resumir, conectar, recomendar, priorizar.
-            - No uses numeracion adicional fuera de una lista simple.
+            - Mezcla resumir, conectar, descubrir y profundizar.
+            - Usa temas reales de las notas.
             - No expliques nada mas.
 
-            Temas detectados:
-            """);
-
-        if (topics.isEmpty()) {
-            builder.append("- sin temas claros\n");
-        } else {
-            for (String topic : topics) {
-                builder.append("- ").append(topic).append("\n");
-            }
-        }
-
-        builder.append("""
-
-            Notas recientes:
+            Notas:
             """);
 
         for (int index = 0; index < entries.size(); index += 1) {
             EntryResponse entry = entries.get(index);
             builder.append(index + 1)
-                .append(". Titulo: ")
-                .append(entry.title());
-
-            String tags = entry.tags().stream()
-                .map(tag -> tag.name())
-                .filter(StringUtils::hasText)
-                .collect(Collectors.joining(", "));
-            if (StringUtils.hasText(tags)) {
-                builder.append(" | Tags: ").append(tags);
-            }
-
-            String snippet = buildSnippet(entry);
-            if (StringUtils.hasText(snippet)) {
-                builder.append(" | Contenido: ").append(snippet);
-            }
-            builder.append("\n");
+                .append(". ")
+                .append(entry.title())
+                .append(" | ")
+                .append(buildSnippet(entry))
+                .append("\n");
         }
 
         builder.append("\nSugerencias:");
         return builder.toString();
     }
 
-    private String buildSnippet(EntryResponse entry) {
-        List<String> pieces = new ArrayList<>();
-        for (ResourceResponse resource : entry.resources()) {
-            appendIfPresent(pieces, resource.title());
-            appendIfPresent(pieces, resource.textContent());
-            appendIfPresent(pieces, resource.description());
-            appendIfPresent(pieces, resource.contentPreview());
-            appendIfPresent(pieces, resource.siteName());
-            appendIfPresent(pieces, resource.url());
-        }
-        String snippet = String.join(" ", pieces).replaceAll("\\s+", " ").trim();
-        if (!StringUtils.hasText(snippet)) {
-            snippet = entry.title();
-        }
-        if (!StringUtils.hasText(snippet)) {
-            return "Sin contenido adicional.";
-        }
-        return snippet.length() > 320 ? snippet.substring(0, 320).trim() + "..." : snippet;
-    }
+    private List<ExploreRecommendationItemResponse> buildFallbackRecommendations(List<EntryResponse> entries) {
+        List<String> topics = extractTopics(entries);
+        List<ExploreRecommendationItemResponse> recommendations = new ArrayList<>();
 
-    private void appendIfPresent(List<String> pieces, String value) {
-        if (StringUtils.hasText(value)) {
-            pieces.add(value.trim());
+        if (!topics.isEmpty()) {
+            String mainTopic = topics.getFirst();
+            List<ExploreSourceResponse> sources = findSourcesForTopic(entries, mainTopic);
+            recommendations.add(new ExploreRecommendationItemResponse(
+                "EXPLORE",
+                "Mapa del tema",
+                "Agrupa lo mas importante de este foco para convertirlo en una vision mas clara.",
+                "Hazme un mapa claro de lo mas importante que tengo sobre " + mainTopic,
+                sources
+            ));
+            recommendations.add(new ExploreRecommendationItemResponse(
+                "EXPLORE",
+                "Descubre mas",
+                "Busca informacion nueva, ejemplos o referencias relacionadas con este foco.",
+                "Basandote en mis notas sobre " + mainTopic + ", que deberia descubrir o mirar despues",
+                sources
+            ));
+            recommendations.add(new ExploreRecommendationItemResponse(
+                "EXPLORE",
+                "Variante posible",
+                "Explora una version distinta, un caso especial o un enfoque menos obvio de este mismo tema.",
+                "A partir de mis notas sobre " + mainTopic + ", ensename variantes interesantes o enfoques relacionados",
+                sources
+            ));
         }
-    }
 
-    private List<String> parseSuggestions(String rawResponse) {
-        if (!StringUtils.hasText(rawResponse)) {
-            return List.of();
-        }
+        EntryResponse firstEntry = entries.getFirst();
+        recommendations.add(new ExploreRecommendationItemResponse(
+            "EXPLORE",
+            "Completa esto",
+            "Usa esta nota como base para sugerir algo que la complemente o la lleve un paso mas alla.",
+            "A partir de " + firstEntry.title() + ", dime con que ideas, ejemplos o contenidos la complementaria",
+            List.of(toSource(firstEntry))
+        ));
+        recommendations.add(new ExploreRecommendationItemResponse(
+            "EXPLORE",
+            "Profundiza aqui",
+            "Convierte una nota concreta en una puerta de entrada para aprender algo mas especifico o avanzado.",
+            "A partir de " + firstEntry.title() + ", que deberia aprender o explorar para profundizar mas",
+            List.of(toSource(firstEntry))
+        ));
 
-        Set<String> uniqueSuggestions = new LinkedHashSet<>();
-        for (String line : rawResponse.split("\\R")) {
-            String cleaned = line
-                .replaceFirst("^\\s*[-*•]+\\s*", "")
-                .replaceFirst("^\\s*\\d+[.)-]?\\s*", "")
-                .trim();
-            if (!StringUtils.hasText(cleaned)) {
-                continue;
-            }
-            cleaned = cleaned.replaceAll("^\"|\"$", "").trim();
-            if (!StringUtils.hasText(cleaned)) {
-                continue;
-            }
-            uniqueSuggestions.add(cleaned);
-            if (uniqueSuggestions.size() == 4) {
-                break;
-            }
-        }
-        return uniqueSuggestions.stream().toList();
+        return recommendations.stream().limit(4).toList();
     }
 
     private List<ExploreRecommendationItemResponse> parseRecommendations(String rawResponse, List<EntryResponse> entries) {
@@ -439,21 +455,23 @@ public class ExploreService {
             return List.of();
         }
 
-        Map<String, EntryResponse> entriesByNormalizedTitle = entries.stream()
+        Map<String, ExploreSourceResponse> sourcesByTitle = entries.stream()
+            .map(this::toSource)
             .collect(Collectors.toMap(
-                entry -> normalizeForLookup(entry.title()),
+                source -> normalizeForLookup(source.title()),
                 Function.identity(),
                 (left, _right) -> left
             ));
 
         List<ExploreRecommendationItemResponse> recommendations = new ArrayList<>();
         String[] blocks = rawResponse.split("(?m)^END\\s*$");
+
         for (String block : blocks) {
-            String type = extractRecommendationField(block, "TYPE:");
-            String title = extractRecommendationField(block, "TITLE:");
-            String description = extractRecommendationField(block, "DESCRIPTION:");
-            String question = extractRecommendationField(block, "QUESTION:");
-            String sourcesRaw = extractRecommendationField(block, "SOURCES:");
+            String type = extractField(block, "TYPE:");
+            String title = extractField(block, "TITLE:");
+            String description = extractField(block, "DESCRIPTION:");
+            String question = extractField(block, "QUESTION:");
+            String sourcesRaw = extractField(block, "SOURCES:");
 
             String normalizedType = normalizeRecommendationType(type);
             if (!StringUtils.hasText(normalizedType)
@@ -467,11 +485,10 @@ public class ExploreService {
                 .map(String::trim)
                 .filter(StringUtils::hasText)
                 .map(this::normalizeForLookup)
-                .map(entriesByNormalizedTitle::get)
-                .filter(entry -> entry != null)
+                .map(sourcesByTitle::get)
+                .filter(item -> item != null)
                 .distinct()
                 .limit(3)
-                .map(entry -> new ExploreSourceResponse(entry.id(), entry.title(), buildSnippet(entry)))
                 .toList();
 
             if (sources.isEmpty()) {
@@ -480,11 +497,12 @@ public class ExploreService {
 
             recommendations.add(new ExploreRecommendationItemResponse(
                 normalizedType,
-                title,
-                description,
-                question,
+                truncateChipTitle(title),
+                description.trim(),
+                question.trim(),
                 sources
             ));
+
             if (recommendations.size() == 4) {
                 break;
             }
@@ -493,188 +511,177 @@ public class ExploreService {
         return recommendations;
     }
 
+    private List<String> parseSuggestions(String rawResponse) {
+        if (!StringUtils.hasText(rawResponse)) {
+            return List.of();
+        }
+
+        Set<String> suggestions = new LinkedHashSet<>();
+        for (String line : rawResponse.split("\\R")) {
+            String cleaned = line
+                .replaceFirst("^\\s*[-*]+\\s*", "")
+                .replaceFirst("^\\s*\\d+[.)-]?\\s*", "")
+                .trim();
+            if (!StringUtils.hasText(cleaned)) {
+                continue;
+            }
+            suggestions.add(cleaned);
+            if (suggestions.size() == 4) {
+                break;
+            }
+        }
+
+        return suggestions.stream().toList();
+    }
+
     private List<String> buildFallbackSuggestions(List<EntryResponse> entries) {
         List<String> topics = extractTopics(entries);
         Set<String> suggestions = new LinkedHashSet<>();
 
         if (!topics.isEmpty()) {
-            suggestions.add("Resume lo mas importante sobre " + topics.get(0));
+            suggestions.add("Resume lo mas importante sobre " + topics.getFirst());
+            suggestions.add("Que deberia descubrir despues sobre " + topics.getFirst());
         }
         if (topics.size() >= 2) {
             suggestions.add("Como se relacionan " + topics.get(0) + " y " + topics.get(1));
         }
-        if (!topics.isEmpty()) {
-            suggestions.add("Recomiendame que revisar despues sobre " + topics.get(0));
-        }
 
-        String latestTitle = trimTopic(entries.getFirst().title());
-        if (StringUtils.hasText(latestTitle)) {
-            suggestions.add("Que deberia hacer a partir de " + latestTitle);
-        }
-
-        suggestions.add("Que idea de mis apuntes merece mas atencion ahora");
-
+        suggestions.add("Que merece la pena profundizar ahora");
         return suggestions.stream().limit(4).toList();
     }
 
-    private List<ExploreRecommendationItemResponse> buildFallbackRecommendations(List<EntryResponse> entries) {
-        List<String> topics = extractTopics(entries);
-        List<ExploreRecommendationItemResponse> recommendations = new ArrayList<>();
-
-        if (!topics.isEmpty()) {
-            List<ExploreSourceResponse> topicSources = findSourcesForTopic(entries, topics.getFirst());
-            if (!topicSources.isEmpty()) {
-                recommendations.add(new ExploreRecommendationItemResponse(
-                    "EXPLORE",
-                    "Consolida " + topics.getFirst(),
-                    "Tienes varias piezas que apuntan al mismo tema y merece una sintesis unica.",
-                    "Resume lo mas importante sobre " + topics.getFirst(),
-                    topicSources
-                ));
-            }
+    private List<ExploreConversationTurnRequest> sanitizeHistory(List<ExploreConversationTurnRequest> history) {
+        if (history == null || history.isEmpty()) {
+            return List.of();
         }
 
-        if (topics.size() >= 2) {
-            String leftTopic = topics.get(0);
-            String rightTopic = topics.get(1);
-            List<ExploreSourceResponse> leftSources = findSourcesForTopic(entries, leftTopic);
-            List<ExploreSourceResponse> rightSources = findSourcesForTopic(entries, rightTopic);
-            List<ExploreSourceResponse> combinedSources = new ArrayList<>();
-            combinedSources.addAll(leftSources.stream().limit(1).toList());
-            combinedSources.addAll(rightSources.stream().limit(2).toList());
-            if (!combinedSources.isEmpty()) {
-                recommendations.add(new ExploreRecommendationItemResponse(
-                    "EXPLORE",
-                    "Conecta " + leftTopic + " con " + rightTopic,
-                    "Hay material cercano entre estos temas y puede salir una relacion util o una idea nueva.",
-                    "Como se relacionan " + leftTopic + " y " + rightTopic,
-                    combinedSources.stream().distinct().limit(3).toList()
-                ));
-            }
-        }
+        int skip = Math.max(0, history.size() - 10);
 
-        EntryResponse latestEntry = entries.getFirst();
-        recommendations.add(new ExploreRecommendationItemResponse(
-            "EXPLORE",
-            "Empieza por lo ultimo",
-            "Tu nota mas reciente es una buena puerta de entrada para seguir tirando del hilo.",
-            "Que deberia revisar a partir de " + latestEntry.title(),
-            List.of(new ExploreSourceResponse(latestEntry.id(), latestEntry.title(), buildSnippet(latestEntry)))
-        ));
+        return history.stream()
+            .skip(skip)
+            .filter(item -> item != null && StringUtils.hasText(item.getRole()) && StringUtils.hasText(item.getContent()))
+            .map(item -> {
+                ExploreConversationTurnRequest sanitized = new ExploreConversationTurnRequest();
+                sanitized.setRole(normalizeConversationRole(item.getRole()));
+                sanitized.setContent(item.getContent().trim());
+                return sanitized;
+            })
+            .toList();
+    }
 
-        List<ExploreSourceResponse> improvementSources;
-        if (!topics.isEmpty()) {
-            improvementSources = findSourcesForTopic(entries, topics.getFirst());
-        } else {
-            improvementSources = List.of(new ExploreSourceResponse(latestEntry.id(), latestEntry.title(), buildSnippet(latestEntry)));
+    private String normalizeConversationRole(String role) {
+        String normalized = normalizeForLookup(role);
+        if ("assistant".equals(normalized) || "asistente".equals(normalized)) {
+            return "assistant";
         }
-        if (!improvementSources.isEmpty()) {
-            String improvementTopic = !topics.isEmpty() ? topics.getFirst() : latestEntry.title();
-            recommendations.add(new ExploreRecommendationItemResponse(
-                "OPTIMIZE",
-                "Mejora una nota clave",
-                "Aqui puede faltarte contexto, resumen o una relacion mas clara para que luego sea mas facil encontrarla.",
-                "Que le falta a mis notas sobre " + improvementTopic + " para quedar mejor explicadas",
-                improvementSources
-            ));
-        }
-
-        List<ExploreRecommendationItemResponse> fallback = recommendations.stream().limit(4).toList();
-        if (fallback.size() == 4) {
-            return fallback;
-        }
-
-        List<ExploreRecommendationItemResponse> completed = new ArrayList<>(fallback);
-        while (completed.size() < 4) {
-            completed.add(new ExploreRecommendationItemResponse(
-                completed.size() == 3 ? "OPTIMIZE" : "EXPLORE",
-                completed.size() == 3 ? "Mejora una nota reciente" : "Sigue explorando",
-                completed.size() == 3
-                    ? "Puede haber una nota importante que necesite mas contexto para ser mas util despues."
-                    : "Hay margen para descubrir conexiones utiles sin tocar lo que ya tienes.",
-                completed.size() == 3
-                    ? "Que nota reciente deberia mejorar para entenderla mejor mas adelante"
-                    : "Que deberia explorar a continuacion en mis apuntes",
-                List.of(new ExploreSourceResponse(latestEntry.id(), latestEntry.title(), buildSnippet(latestEntry)))
-            ));
-        }
-        return completed;
+        return "user";
     }
 
     private List<String> extractTopics(List<EntryResponse> entries) {
-        Map<String, Integer> scores = new HashMap<>();
+        Map<String, Integer> scores = new LinkedHashMap<>();
+        Map<String, String> labels = new LinkedHashMap<>();
 
         for (EntryResponse entry : entries) {
             for (String tagName : entry.tags().stream().map(tag -> tag.name()).toList()) {
-                addTopicScore(scores, tagName, 4);
+                addTopicScore(scores, labels, tagName, 5);
             }
 
             Arrays.stream(entry.title().split("[,|:/\\-]"))
                 .map(this::trimTopic)
-                .forEach(topic -> addTopicScore(scores, topic, 3));
+                .forEach(topic -> addTopicScore(scores, labels, topic, 3));
 
             for (ResourceResponse resource : entry.resources()) {
-                addTopicScore(scores, resource.title(), 2);
-                addTopicScore(scores, resource.siteName(), 1);
+                addTopicScore(scores, labels, resource.title(), 2);
+                addTopicScore(scores, labels, resource.siteName(), 1);
             }
         }
 
         return scores.entrySet().stream()
             .sorted((left, right) -> Integer.compare(right.getValue(), left.getValue()))
-            .map(Map.Entry::getKey)
+            .map(entry -> labels.getOrDefault(entry.getKey(), entry.getKey()))
             .limit(5)
             .toList();
-    }
-
-    private void addTopicScore(Map<String, Integer> scores, String rawTopic, int weight) {
-        String topic = trimTopic(rawTopic);
-        if (!StringUtils.hasText(topic)) {
-            return;
-        }
-        scores.merge(topic, weight, Integer::sum);
-    }
-
-    private String trimTopic(String rawTopic) {
-        if (!StringUtils.hasText(rawTopic)) {
-            return null;
-        }
-
-        String cleaned = rawTopic
-            .replaceAll("\\s+", " ")
-            .replaceAll("^[#\\-•\\s]+", "")
-            .trim();
-
-        String normalized = cleaned.toLowerCase(Locale.ROOT);
-        if (normalized.length() < 4) {
-            return null;
-        }
-        if (normalized.startsWith("que ") || normalized.startsWith("como ") || normalized.startsWith("para ")) {
-            return null;
-        }
-        if (normalized.equals("nueva entrada")
-            || normalized.equals("archivos")
-            || normalized.equals("checklist")
-            || normalized.equals("todo list")
-            || normalized.equals("youtube")
-            || normalized.equals("twitch")) {
-            return null;
-        }
-
-        return cleaned;
     }
 
     private List<ExploreSourceResponse> findSourcesForTopic(List<EntryResponse> entries, String topic) {
         String normalizedTopic = normalizeForLookup(topic);
         return entries.stream()
-            .filter(entry -> normalizeForLookup(entry.title()).contains(normalizedTopic)
-                || buildSnippet(entry).toLowerCase(Locale.ROOT).contains(normalizedTopic)
-                || entry.tags().stream().anyMatch(tag -> normalizeForLookup(tag.name()).contains(normalizedTopic)))
+            .filter(entry -> entryMatchesTopic(entry, normalizedTopic))
             .limit(3)
-            .map(entry -> new ExploreSourceResponse(entry.id(), entry.title(), buildSnippet(entry)))
+            .map(this::toSource)
             .toList();
     }
 
-    private String extractRecommendationField(String block, String prefix) {
+    private boolean entryMatchesTopic(EntryResponse entry, String normalizedTopic) {
+        return normalizeForLookup(entry.title()).contains(normalizedTopic)
+            || normalizeForLookup(buildDetailedSnippet(entry)).contains(normalizedTopic)
+            || entry.tags().stream().anyMatch(tag -> normalizeForLookup(tag.name()).contains(normalizedTopic));
+    }
+
+    private void addTopicScore(Map<String, Integer> scores, Map<String, String> labels, String rawTopic, int weight) {
+        String topic = trimTopic(rawTopic);
+        if (!StringUtils.hasText(topic)) {
+            return;
+        }
+        String normalizedTopic = normalizeForLookup(topic);
+        scores.merge(normalizedTopic, weight, Integer::sum);
+        labels.putIfAbsent(normalizedTopic, topic);
+    }
+
+    private String buildSnippet(EntryResponse entry) {
+        String snippet = buildDetailedSnippet(entry);
+        return snippet.length() > 320 ? snippet.substring(0, 320).trim() + "..." : snippet;
+    }
+
+    private String buildDetailedSnippet(EntryResponse entry) {
+        List<String> parts = new ArrayList<>();
+        appendIfPresent(parts, entry.title());
+        appendIfPresent(parts, entry.processingCategory());
+        entry.tags().forEach(tag -> appendIfPresent(parts, tag.name()));
+        entry.keyIdeas().forEach(value -> appendIfPresent(parts, value));
+        entry.actions().forEach(value -> appendIfPresent(parts, value));
+
+        for (ResourceResponse resource : entry.resources()) {
+            appendIfPresent(parts, resource.title());
+            appendIfPresent(parts, resource.textContent());
+            appendIfPresent(parts, resource.description());
+            appendIfPresent(parts, resource.contentPreview());
+            appendIfPresent(parts, resource.siteName());
+            appendIfPresent(parts, resource.url());
+            appendIfPresent(parts, resource.fileName());
+        }
+
+        String snippet = parts.stream()
+            .filter(StringUtils::hasText)
+            .collect(Collectors.joining(" "))
+            .replaceAll("\\s+", " ")
+            .trim();
+
+        return StringUtils.hasText(snippet) ? snippet : "Sin contenido adicional.";
+    }
+
+    private void appendIfPresent(List<String> parts, String value) {
+        if (StringUtils.hasText(value)) {
+            parts.add(value.trim());
+        }
+    }
+
+    private ExploreSourceResponse toSource(EntryResponse entry) {
+        return new ExploreSourceResponse(entry.id(), entry.title(), buildSnippet(entry));
+    }
+
+    private List<ExploreSourceResponse> dedupeSources(List<ExploreSourceResponse> sources) {
+        return new ArrayList<>(sources.stream()
+            .collect(Collectors.toMap(
+                ExploreSourceResponse::entryId,
+                Function.identity(),
+                (left, _right) -> left,
+                LinkedHashMap::new
+            ))
+            .values());
+    }
+
+    private String extractField(String block, String prefix) {
         return Arrays.stream(block.split("\\R"))
             .map(String::trim)
             .filter(line -> line.startsWith(prefix))
@@ -682,10 +689,6 @@ public class ExploreService {
             .filter(StringUtils::hasText)
             .findFirst()
             .orElse(null);
-    }
-
-    private String normalizeForLookup(String value) {
-        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private String normalizeRecommendationType(String value) {
@@ -696,9 +699,51 @@ public class ExploreService {
         return null;
     }
 
-    private RecommendationMix resolveRecommendationMix(String refreshToken) {
-        int variant = Math.abs((refreshToken == null ? "base" : refreshToken).hashCode()) % 2;
-        return variant == 0 ? new RecommendationMix(3, 1) : new RecommendationMix(2, 2);
+    private String normalizeForLookup(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(value.trim().toLowerCase(Locale.ROOT), Normalizer.Form.NFD);
+        return normalized.replaceAll("\\p{M}+", "");
+    }
+
+    private String trimTopic(String rawTopic) {
+        if (!StringUtils.hasText(rawTopic)) {
+            return null;
+        }
+
+        String cleaned = rawTopic
+            .replaceAll("\\s+", " ")
+            .replaceAll("^[#\\-\\s]+", "")
+            .trim();
+        String normalized = cleaned.toLowerCase(Locale.ROOT);
+
+        if (normalized.length() < 4) {
+            return null;
+        }
+        if (normalized.startsWith("que ") || normalized.startsWith("como ") || normalized.startsWith("para ")) {
+            return null;
+        }
+        if (normalized.equals("nueva entrada")
+            || normalized.equals("archivos")
+            || normalized.equals("checklist")
+            || normalized.equals("youtube")
+            || normalized.equals("twitch")) {
+            return null;
+        }
+
+        return cleaned;
+    }
+
+    private String truncateChipTitle(String title) {
+        if (!StringUtils.hasText(title)) {
+            return title;
+        }
+        String[] words = title.trim().split("\\s+");
+        if (words.length <= 3) {
+            return title.trim();
+        }
+        return String.join(" ", Arrays.copyOfRange(words, 0, 3));
     }
 
     private String sanitizePlainText(String value) {
@@ -706,52 +751,27 @@ public class ExploreService {
             return value;
         }
 
-        String sanitized = value
-            .replaceAll("\\*\\*(.*?)\\*\\*", "$1")
-            .replaceAll("__(.*?)__", "$1")
-            .replaceAll("(?m)^#{1,6}\\s*", "")
-            .trim();
-
-        String[] promptMarkers = {
-            "Respuesta:",
-            "Pregunta:",
-            "Notas relevantes:",
-            "Notas disponibles:",
-            "Nota:",
-            "Sugerencias:",
-            "Recomendaciones:"
-        };
-
-        for (String marker : promptMarkers) {
-            int markerIndex = sanitized.lastIndexOf(marker);
-            if (markerIndex >= 0 && "Respuesta:".equals(marker)) {
-                sanitized = sanitized.substring(markerIndex + marker.length()).trim();
-            }
-        }
-
-        sanitized = Arrays.stream(sanitized.split("\\R"))
+        return Arrays.stream(value
+                .replace("```", "")
+                .replaceAll("\\*\\*(.*?)\\*\\*", "$1")
+                .replaceAll("__(.*?)__", "$1")
+                .split("\\R"))
             .map(String::trim)
             .filter(StringUtils::hasText)
             .filter(line -> !line.startsWith("Pregunta:"))
             .filter(line -> !line.startsWith("Notas relevantes:"))
             .filter(line -> !line.startsWith("Notas disponibles:"))
-            .filter(line -> !line.startsWith("Nota:"))
+            .filter(line -> !line.startsWith("Notas:"))
+            .filter(line -> !line.startsWith("Chips:"))
             .filter(line -> !line.startsWith("Sugerencias:"))
-            .filter(line -> !line.startsWith("Recomendaciones:"))
             .collect(Collectors.joining("\n"))
             .trim();
-
-        return sanitized;
     }
-
 
     private String trimRequired(String value, String message) {
         if (!StringUtils.hasText(value)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
         }
         return value.trim();
-    }
-
-    private record RecommendationMix(int exploreCount, int optimizeCount) {
     }
 }

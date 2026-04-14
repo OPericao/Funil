@@ -11,6 +11,7 @@ import type {
   UploadFileResult,
   EntryRelationshipItem,
   ExploreAnswer,
+  ExploreAskInput,
   ExploreCollections,
   ExploreSuggestions,
   ExploreRecommendations
@@ -24,10 +25,10 @@ export function fetchEntryById(entryId: number) {
   return api<EntryItem>(`/entries/${entryId}`);
 }
 
-export function askExplore(question: string) {
+export function askExplore(input: ExploreAskInput) {
   return api<ExploreAnswer>("/explore/ask", {
     method: "POST",
-    body: JSON.stringify({ question })
+    body: JSON.stringify(input)
   });
 }
 

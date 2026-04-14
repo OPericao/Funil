@@ -117,6 +117,25 @@ export type ExploreAnswer = {
   sources: ExploreSourceItem[];
 };
 
+export type ExploreConversationTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type ExploreActiveChip = {
+  type: "EXPLORE" | "OPTIMIZE";
+  title: string;
+  description: string;
+  suggestedQuestion: string;
+};
+
+export type ExploreAskInput = {
+  question: string;
+  sourceEntryIds?: number[];
+  activeChip?: ExploreActiveChip | null;
+  history?: ExploreConversationTurn[];
+};
+
 export type ExploreSuggestions = {
   suggestions: string[];
 };
