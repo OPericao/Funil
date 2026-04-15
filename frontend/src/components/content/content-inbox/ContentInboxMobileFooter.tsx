@@ -3,9 +3,9 @@ import {
   InboxArrowDownIcon,
   MagnifyingGlassIcon,
   RelationshipGraphIcon,
-  StorageIcon,
   UserIcon
 } from "../../ui/icons";
+import { StorageTabIcon } from "../../ui/StorageTabIcon";
 import { footerButtonClass, type InboxSection } from "./constants";
 
 type ContentInboxMobileFooterProps = {
@@ -20,7 +20,7 @@ const mobileNavSections: Array<{
   labelKey: "footer.explore" | "footer.storage" | "footer.inbox" | "footer.relationshipGraph" | "footer.profile";
 }> = [
   { section: "explore", withRightBorder: true, icon: MagnifyingGlassIcon, labelKey: "footer.explore" },
-  { section: "storage", withRightBorder: true, icon: StorageIcon, labelKey: "footer.storage" },
+  { section: "storage", withRightBorder: true, icon: StorageTabIcon, labelKey: "footer.storage" },
   { section: "inbox", withRightBorder: true, icon: InboxArrowDownIcon, labelKey: "footer.inbox" },
   {
     section: "relationshipGraph",

@@ -16,7 +16,7 @@ export const LANGUAGE_OPTIONS: AppLanguage[] = ["es", "en", "fr", "gl"];
 
 export const SECTION_PATH_MAP: Record<InboxSection, string> = {
   explore: "/explore",
-  storage: "/storage",
+  storage: "/library",
   inbox: "/inbox",
   relationshipGraph: "/relationship-graph",
   profile: "/profile"

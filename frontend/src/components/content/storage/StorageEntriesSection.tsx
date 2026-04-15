@@ -13,17 +13,17 @@ import {
 import { useI18n } from "../../../i18n/I18nProvider";
 import type { EntryFolderItem, EntryItem, FolderItem } from "../../../types/resource";
 import { readErrorMessage } from "../../../utils/error";
+import GlassIcons from "../../ui/GlassIcons";
 import { errorTextClass, fieldLabelClass, inputClass } from "../../ui/styles";
+import { StorageTabIcon } from "../../ui/StorageTabIcon";
 import {
   ArrowDownTrayIcon,
   ArrowLongLeftIcon,
   ChecklistIcon,
-  CreateFolderIcon,
   LinkIcon,
   ListBulletIcon,
   MusicalNoteIcon,
   PencilSquareIcon,
-  StorageIcon,
   TableIcon,
   TextComponentIcon,
   TrashIcon,
@@ -33,6 +33,7 @@ import {
 } from "../../ui/icons";
 import { CreateFolderModal } from "./CreateFolderModal";
 import { Portal } from "../../ui/Portal";
+import { HeroVideoDialog } from "../../ui/HeroVideoDialog";
 
 type StorageEntriesSectionProps = {
   entries: EntryItem[];
@@ -52,6 +53,10 @@ type StorageEntriesSectionProps = {
 type EntryFlagFilter = "ALL" | "YOUTUBE" | "TWITCH" | "SPOTIFY" | "CHECKLIST" | "TABLE" | "LINK" | "ENUMERATION";
 
 const CHECKLIST_TITLES = new Set(["checklist", "todo list", "todolist", "todo"]);
+
+function TodoFilterStorageIcon({ className }: { className?: string }) {
+  return <StorageTabIcon className={className} scale={0.18} />;
+}
 
 function isChecklistResource(resource: EntryItem["resources"][number]) {
   if (resource.type !== "RAW") {
@@ -384,6 +389,13 @@ function getEntryYoutubeVideos(entry: EntryItem): YouTubeVideoPreview[] {
   }
 
   return Array.from(videosById.values());
+}
+
+function getYoutubeThumbnail(videoId: string | null | undefined) {
+  if (!videoId) {
+    return null;
+  }
+  return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 }
 
 function getTwitchEmbedParentHost() {
@@ -728,7 +740,7 @@ export function StorageEntriesSection({
 
   const flagFilters = useMemo(
     () => [
-      { key: "ALL" as const, label: "Todo", icon: StorageIcon },
+      { key: "ALL" as const, label: "Todo", icon: TodoFilterStorageIcon },
       { key: "YOUTUBE" as const, label: "YouTube", icon: YoutubeIcon },
       { key: "TWITCH" as const, label: "Twitch", icon: TwitchIcon },
       { key: "SPOTIFY" as const, label: "Spotify", icon: MusicalNoteIcon },
@@ -738,6 +750,32 @@ export function StorageEntriesSection({
       { key: "ENUMERATION" as const, label: "Listas", icon: ListBulletIcon }
     ],
     []
+  );
+
+  const glassFilterItems = useMemo(
+    () =>
+      flagFilters.map((filter) => {
+        const Icon = filter.icon;
+        const colorByKey: Record<EntryFlagFilter, string> = {
+          ALL: "indigo",
+          YOUTUBE: "red",
+          TWITCH: "purple",
+          SPOTIFY: "green",
+          CHECKLIST: "orange",
+          TABLE: "blue",
+          LINK: "indigo",
+          ENUMERATION: "purple"
+        };
+
+        return {
+          icon: <Icon className="h-5 w-5" />,
+          color: colorByKey[filter.key],
+          label: filter.label,
+          active: activeFlagFilter === filter.key,
+          onClick: () => setActiveFlagFilter(filter.key)
+        };
+      }),
+    [activeFlagFilter, flagFilters]
   );
 
   const filteredFolders = useMemo(() => {
@@ -755,6 +793,8 @@ export function StorageEntriesSection({
     }
     return entries.find((entry) => entry.id === selectedEntryId) ?? null;
   }, [entries, selectedEntryId]);
+
+  const selectedEntryStableId = selectedEntry?.id ?? null;
 
   const pendingDeleteEntry = useMemo(() => {
     if (pendingDeleteEntryId === null) {
@@ -815,6 +855,8 @@ export function StorageEntriesSection({
           (resource.type === "RAW" && !isChecklistResource(resource))) ?? null
     );
   }, [selectedEntry]);
+
+  const selectedTextResourceStableId = selectedTextResource?.id ?? null;
   const selectedTodoListText = useMemo(() => {
     if (!selectedEntry) {
       return null;
@@ -1022,7 +1064,7 @@ export function StorageEntriesSection({
     setTextDraft(selectedTextResource?.textContent ?? "");
     setDetailSaveError(null);
     setDetailSaveSuccess(null);
-  }, [selectedEntry, selectedTextResource]);
+  }, [selectedEntryStableId, selectedTextResourceStableId]);
 
   useEffect(() => {
     setSelectedEntryId(null);
@@ -1486,7 +1528,7 @@ export function StorageEntriesSection({
               />
             </label>
 
-            <div className="shrink-0">
+            <div className="flex shrink-0 justify-center">
               <button
                 type="button"
                 className={iconToggleClass(foldersViewActive)}
@@ -1496,7 +1538,7 @@ export function StorageEntriesSection({
                 {foldersViewActive && selectedFolder ? (
                   <ArrowLongLeftIcon className="h-6 w-6" />
                 ) : (
-                  <StorageIcon className="h-6 w-6" />
+                  <StorageTabIcon className="h-6 w-6" />
                 )}
               </button>
             </div>
@@ -1505,27 +1547,7 @@ export function StorageEntriesSection({
             <p className="text-xs font-semibold text-ink-500">{t("storage.searching")}</p>
           ) : null}
           {searchValue.trim() && searchError ? <p className={errorTextClass}>{searchError}</p> : null}
-          <div className="flex flex-wrap gap-2">
-            {flagFilters.map((filter) => {
-              const Icon = filter.icon;
-              const active = activeFlagFilter === filter.key;
-              return (
-                <button
-                  key={filter.key}
-                  type="button"
-                  className={`inline-flex h-9 items-center justify-center gap-2 rounded-full border px-3 text-xs font-semibold transition ${
-                    active
-                      ? "border-brand-500 bg-brand-500 text-white shadow-sm"
-                      : "border-[#F0F0F0] bg-white/60 text-ink-700 hover:bg-brand-50"
-                  }`}
-                  onClick={() => setActiveFlagFilter(filter.key)}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span>{filter.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          <GlassIcons items={glassFilterItems} className="storage-glass-filters" />
         </div>
         </section>
 
@@ -1540,7 +1562,7 @@ export function StorageEntriesSection({
               onClick={openCreateFolderModal}
               disabled={creatingFolder}
             >
-              <CreateFolderIcon className="h-5 w-5" />
+              <StorageTabIcon className="h-5 w-5" />
               <span>{t("storage.createFolder")}</span>
             </button>
           </div>
@@ -1574,7 +1596,7 @@ export function StorageEntriesSection({
                 >
                   <h3 className="break-words text-base font-semibold leading-snug text-ink-900">{folder.title}</h3>
                   <div className="flex min-h-20 items-center justify-center rounded-control border border-[#F0F0F0] bg-brand-50">
-                    <StorageIcon className="h-9 w-9 text-brand-600" />
+                    <StorageTabIcon className="h-9 w-9 text-brand-600" scale={0.36} />
                   </div>
                 </button>
               ))}
@@ -1659,40 +1681,42 @@ export function StorageEntriesSection({
                   )}
                   <div className="mt-2 h-px w-full bg-brand-200" />
                   {isYoutubeCard ? (
-                    <div className={youtubeVideo!.isShort ? "mt-2 flex justify-center" : "mt-2"}>
-                      <div
-                        className={`overflow-hidden rounded-control border border-[#F0F0F0] bg-brand-50 ${
-                          youtubeVideo!.isShort ? "w-full max-w-[220px]" : "w-full"
-                        }`}
-                        style={youtubeVideo!.isShort ? { aspectRatio: "9 / 16" } : undefined}
-                      >
-                        <iframe
-                          className={youtubeVideo!.isShort ? "h-full w-full" : "h-40 w-full"}
-                          src={youtubeVideo!.embedUrl}
-                          title={youtubeVideo!.title}
-                          loading="lazy"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                          allowFullScreen
-                        />
-                      </div>
+                    <div className="mt-2">
+                      <HeroVideoDialog
+                        animationStyle="from-center"
+                        videoSrc={youtubeVideo!.embedUrl}
+                        thumbnailSrc={getYoutubeThumbnail(youtubeVideo!.videoId)}
+                        thumbnailAlt={youtubeVideo!.title}
+                        title={youtubeVideo!.title}
+                        aspectRatio={youtubeVideo!.isShort ? "short" : "video"}
+                      />
                     </div>
                   ) : isTwitchCard ? (
-                    <div
-                      className={`mt-2 overflow-hidden rounded-control border ${
-                        twitchVideo!.variant === "live"
-                          ? "border-rose-200 bg-rose-50"
-                          : twitchVideo!.variant === "vod"
-                            ? "border-indigo-200 bg-indigo-50"
-                            : "border-amber-200 bg-amber-50"
-                      }`}
-                    >
-                      <iframe
-                        className="h-40 w-full"
-                        src={twitchVideo!.embedUrl}
+                    <div className="mt-2">
+                      <HeroVideoDialog
+                        animationStyle="from-center"
+                        videoSrc={twitchVideo!.embedUrl}
                         title={twitchVideo!.title}
-                        loading="lazy"
-                        allow="autoplay; fullscreen; picture-in-picture"
-                        allowFullScreen
+                        aspectRatio="video"
+                        triggerContent={
+                          <div
+                            className={`relative aspect-video overflow-hidden rounded-control border ${
+                              twitchVideo!.variant === "live"
+                                ? "border-rose-200 bg-rose-50"
+                                : twitchVideo!.variant === "vod"
+                                  ? "border-indigo-200 bg-indigo-50"
+                                  : "border-amber-200 bg-amber-50"
+                            }`}
+                          >
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/30 backdrop-blur-md">
+                                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-md">
+                                  <TwitchIcon className="h-5 w-5 text-violet-700" />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        }
                       />
                     </div>
                   ) : (
@@ -1800,7 +1824,7 @@ export function StorageEntriesSection({
                       aria-expanded={entryFoldersOpen}
                       onClick={openEntryFoldersMenu}
                     >
-                      <StorageIcon className="h-6 w-6" />
+                      <StorageTabIcon className="h-6 w-6" />
                     </button>
                     <button
                       type="button"
@@ -2436,7 +2460,7 @@ export function StorageEntriesSection({
                   aria-expanded={entryFoldersOpen}
                   onClick={openEntryFoldersMenu}
                 >
-                  <StorageIcon className="h-6 w-6" />
+                  <StorageTabIcon className="h-6 w-6" />
                 </button>
                 <button
                   type="button"

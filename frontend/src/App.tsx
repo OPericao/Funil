@@ -7,6 +7,7 @@ import { LoginForm } from "./components/auth/LoginForm";
 import { RegisterForm } from "./components/auth/RegisterForm";
 import { ContentExtensionWidget } from "./components/content/ContentExtensionWidget";
 import { ContentInbox } from "./components/content/ContentInbox";
+import Iridescence from "./components/ui/Iridescence";
 import { useAuthSession } from "./hooks/useAuthSession";
 import type { AuthCredentials } from "./types/auth";
 
@@ -40,54 +41,59 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen">
+    <main className="relative min-h-screen overflow-hidden">
+      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_20%_20%,#eef6ff_0%,#dbeaf8_45%,#c7ddf1_100%)]" />
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <Iridescence color={[0.75, 0.88, 0.98]} mouseReact={false} amplitude={0.06} speed={0.65} />
+      </div>
+      <div className="relative z-10">
       <Routes>
-        <Route
-          path="/"
-          element={
-            auth.authUser ? (
-              <Navigate to="/inbox" replace />
-            ) : (
-              <AuthCardLayout>
-                <AuthEntryGate />
-              </AuthCardLayout>
-            )
-          }
-        />
+          <Route
+            path="/"
+            element={
+              auth.authUser ? (
+                <Navigate to="/inbox" replace />
+              ) : (
+                <AuthCardLayout>
+                  <AuthEntryGate />
+                </AuthCardLayout>
+              )
+            }
+          />
 
-        <Route
-          path="/login"
-          element={
-            auth.authUser ? (
-              <Navigate to="/inbox" replace />
-            ) : (
-              <AuthCardLayout>
-                <LoginForm
-                  submitting={auth.authSubmitting}
-                  error={auth.authError}
-                  onSubmit={onLoginSubmit}
-                />
-              </AuthCardLayout>
-            )
-          }
-        />
+          <Route
+            path="/login"
+            element={
+              auth.authUser ? (
+                <Navigate to="/inbox" replace />
+              ) : (
+                <AuthCardLayout>
+                  <LoginForm
+                    submitting={auth.authSubmitting}
+                    error={auth.authError}
+                    onSubmit={onLoginSubmit}
+                  />
+                </AuthCardLayout>
+              )
+            }
+          />
 
-        <Route
-          path="/register"
-          element={
-            auth.authUser ? (
-              <Navigate to="/inbox" replace />
-            ) : (
-              <AuthCardLayout>
-                <RegisterForm
-                  submitting={auth.authSubmitting}
-                  error={auth.authError}
-                  onSubmit={onRegisterSubmit}
-                />
-              </AuthCardLayout>
-            )
-          }
-        />
+          <Route
+            path="/register"
+            element={
+              auth.authUser ? (
+                <Navigate to="/inbox" replace />
+              ) : (
+                <AuthCardLayout>
+                  <RegisterForm
+                    submitting={auth.authSubmitting}
+                    error={auth.authError}
+                    onSubmit={onRegisterSubmit}
+                  />
+                </AuthCardLayout>
+              )
+            }
+          />
 
         {protectedInboxPaths.map((path) => (
           <Route
@@ -111,21 +117,22 @@ function App() {
           />
         ))}
 
-        <Route path="/storage" element={<Navigate to="/library" replace />} />
+          <Route path="/storage" element={<Navigate to="/library" replace />} />
 
-        <Route
-          path="/extension-widget"
-          element={
-            auth.authUser ? (
-              <ContentExtensionWidget onLogout={auth.logout} />
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
+          <Route
+            path="/extension-widget"
+            element={
+              auth.authUser ? (
+                <ContentExtensionWidget onLogout={auth.logout} />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </div>
     </main>
   );
 }

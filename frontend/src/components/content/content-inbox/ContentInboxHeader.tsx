@@ -9,9 +9,9 @@ import {
   MagnifyingGlassIcon,
   NotificationBellIcon,
   RelationshipGraphIcon,
-  StorageIcon,
   UserIcon
 } from "../../ui/icons";
+import { StorageTabIcon } from "../../ui/StorageTabIcon";
 import { LANGUAGE_OPTIONS, type InboxSection } from "./constants";
 
 type ContentInboxHeaderProps = {
@@ -35,7 +35,7 @@ const desktopNavSections: Array<{
   ariaKey: I18nKey;
 }> = [
   { section: "explore", icon: MagnifyingGlassIcon, ariaKey: "footer.explore" },
-  { section: "storage", icon: StorageIcon, ariaKey: "footer.storage" },
+  { section: "storage", icon: StorageTabIcon, ariaKey: "footer.storage" },
   { section: "inbox", icon: InboxArrowDownIcon, ariaKey: "footer.inbox" },
   { section: "relationshipGraph", icon: RelationshipGraphIcon, ariaKey: "footer.relationshipGraph" },
   { section: "profile", icon: UserIcon, ariaKey: "footer.profile" }
@@ -66,7 +66,7 @@ export function ContentInboxHeader({
   const { language, setLanguage, t } = useI18n();
 
   return (
-    <header className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b border-[#F0F0F0] bg-white/25 px-4 backdrop-blur-sm sm:px-6">
+    <header className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b border-[#F0F0F0] bg-[rgba(217,234,248,0.38)] px-4 backdrop-blur-sm sm:px-6">
       <button
         type="button"
         className="inline-flex items-center justify-center"
