@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { Play, XIcon } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Portal } from "./Portal";

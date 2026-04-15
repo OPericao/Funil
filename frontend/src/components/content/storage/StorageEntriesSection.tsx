@@ -1754,570 +1754,6 @@ export function StorageEntriesSection({
             })}
           </div>
 
-          {selectedEntry && (
-            <div
-              className="fixed inset-0 z-40 flex items-center justify-center bg-ink-900/25 p-4 backdrop-blur-sm"
-              role="dialog"
-              aria-modal="true"
-              aria-label={t("storage.detailTitle")}
-              onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  setForcedLeftEntryId(null);
-                  setForcedRightEntryId(null);
-                  setSelectedEntryId(null);
-                }
-              }}
-            >
-              <div className="w-full overflow-hidden">
-                <div
-                  className={`mx-auto flex w-full max-w-[1120px] items-center justify-center gap-3 transform-gpu transition-transform duration-300 ease-out ${carouselTranslateClass}`}
-                >
-                <button
-                  type="button"
-                  className={`hidden w-[220px] shrink-0 rounded-card border bg-white p-3 text-left shadow-card transform-gpu transition-all duration-300 ease-out lg:block ${leftCardScaleClass} ${
-                    leftRelatedEntry
-                      ? "border-[#F0F0F0] hover:-translate-y-0.5 hover:bg-brand-50 hover:shadow-lg active:scale-[0.99]"
-                      : "cursor-default border-brand-100 bg-brand-50/40 opacity-70"
-                  }`}
-                  onClick={() => {
-                    if (leftRelatedEntry) {
-                      openRelatedEntry(leftRelatedEntry, "left");
-                    }
-                  }}
-                  aria-label={leftRelatedEntry ? t("storage.openRelatedAria", { title: leftRelatedEntry.title }) : t("storage.noRelatedEntries")}
-                  disabled={!leftRelatedEntry || carouselSliding}
-                >
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">{t("storage.relatedLeft")}</p>
-                  {leftRelatedEntry ? (
-                    <>
-                      <h4 className="mt-1 break-words text-sm font-bold text-ink-900">{leftRelatedEntry.title}</h4>
-                      <p className="mt-2 break-words text-xs text-ink-700 overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
-                        {buildEntryText(leftRelatedEntry, t("entries.noContent"))}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-1 text-xs text-ink-600">{t("storage.noRelatedEntries")}</p>
-                  )}
-                </button>
-
-                <section
-                  className={`w-full max-w-[calc(100vw-2rem)] shrink-0 rounded-card border border-[#F0F0F0] bg-white p-4 shadow-card transform-gpu transition-all duration-300 ease-out md:max-w-[560px] md:p-5 ${centerCardScaleClass}`}
-                >
-                  <div className="mb-4 flex items-center justify-between gap-2">
-                  <h3 className="text-lg font-extrabold tracking-tight text-ink-900">
-                    {t("storage.detailTitle")}
-                  </h3>
-                  <div className="relative flex items-center gap-2" ref={entryFoldersMenuRef}>
-                    <button
-                      type="button"
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-rose-300 bg-white text-rose-700 transition hover:bg-rose-50"
-                      aria-label={t("storage.deleteEntryAria")}
-                      onClick={openDeleteEntryConfirm}
-                    >
-                      <TrashIcon className="h-5 w-5" />
-                    </button>
-                    <button
-                      type="button"
-                      className={iconToggleClass(entryFoldersOpen)}
-                      aria-label={t("storage.entryFoldersToggleAria")}
-                      aria-haspopup="menu"
-                      aria-expanded={entryFoldersOpen}
-                      onClick={openEntryFoldersMenu}
-                    >
-                      <StorageTabIcon className="h-6 w-6" />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-rose-300 bg-white text-rose-700 transition hover:bg-rose-50"
-                      aria-label={t("storage.closeDetailAria")}
-                      onClick={() => {
-                        setForcedLeftEntryId(null);
-                        setForcedRightEntryId(null);
-                        setSelectedEntryId(null);
-                      }}
-                    >
-                      <XMarkIcon className="h-5 w-5" />
-                    </button>
-
-                    {entryFoldersOpen && (
-                      <section
-                        className="absolute right-0 top-[calc(100%+10px)] z-40 w-[280px] max-w-[calc(100vw-3rem)] rounded-card border border-[#F0F0F0] bg-white p-3 shadow-card"
-                        role="menu"
-                        aria-label={t("storage.entryFoldersMenuAria")}
-                      >
-                        {entryFoldersLoading ? (
-                          <p className="text-sm font-medium text-ink-600">{t("storage.entryFoldersLoading")}</p>
-                        ) : entryFoldersError ? (
-                          <p className="text-sm font-medium text-ink-600">{entryFoldersError}</p>
-                        ) : entryFolders.length === 0 ? (
-                          <p className="text-sm font-medium text-ink-600">{t("storage.entryFoldersEmpty")}</p>
-                        ) : (
-                          <ul className="scrollbar-brand max-h-56 space-y-1 overflow-y-auto pr-1">
-                            {entryFolders.map((folder) => (
-                              <li key={folder.id}>
-                                <button
-                                  type="button"
-                                  className={`flex w-full items-center justify-between rounded-control border px-2.5 py-2 text-sm font-semibold transition ${
-                                    folder.selected
-                                      ? "border-brand-400 bg-brand-100 text-brand-800"
-                                      : "border-[#F0F0F0] bg-white text-ink-800 hover:bg-brand-50"
-                                  }`}
-                                  disabled={updatingFolderId === folder.id}
-                                  onClick={() => void handleToggleEntryFolder(folder)}
-                                >
-                                  <span className="truncate text-left">{folder.title}</span>
-                                  <span
-                                    className={`ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs ${
-                                      folder.selected
-                                        ? "border-brand-500 bg-brand-500 text-white"
-                                        : "border-brand-300 text-transparent"
-                                    }`}
-                                  >
-                                    ✓
-                                  </span>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </section>
-                    )}
-                  </div>
-                  </div>
-
-                  <div className="grid gap-3">
-                  <article className="flex items-start justify-between gap-3 rounded-control border border-brand-200 bg-white p-3">
-                    <div className="min-w-0 w-full">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                        {t("storage.detailEntryTitle")}
-                      </p>
-                      {editingField === "title" ? (
-                        <div className="mt-2 grid gap-2">
-                          <input
-                            type="text"
-                            value={titleDraft}
-                            onChange={(event) => {
-                              setTitleDraft(event.target.value);
-                              if (detailSaveError) {
-                                setDetailSaveError(null);
-                              }
-                              if (detailSaveSuccess) {
-                                setDetailSaveSuccess(null);
-                              }
-                            }}
-                            className={inputClass}
-                            aria-label={t("storage.detailEntryTitle")}
-                            disabled={savingField === "title"}
-                          />
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                              onClick={cancelEditingField}
-                              disabled={savingField === "title"}
-                            >
-                              {t("common.cancel")}
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex h-9 items-center justify-center rounded-control border border-brand-500 bg-brand-500 px-3 text-sm font-semibold text-white transition hover:bg-brand-600"
-                              onClick={() => void saveTitleChanges()}
-                              disabled={savingField === "title"}
-                            >
-                              {savingField === "title" ? t("common.saving") : t("common.save")}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="break-all whitespace-pre-wrap text-base font-normal text-ink-900">
-                          {selectedEntry.title}
-                        </p>
-                      )}
-                    </div>
-                    {editingField !== "title" && (
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                        aria-label={t("storage.editFieldAria")}
-                        onClick={() => startEditingField("title")}
-                      >
-                        <PencilSquareIcon className="h-5 w-5" />
-                      </button>
-                    )}
-                  </article>
-
-                  <article className="flex items-start justify-between gap-3 rounded-control border border-brand-200 bg-white p-3">
-                    <div className="min-w-0 w-full">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                        {t("storage.detailDescription")}
-                      </p>
-                      {editingField === "text" ? (
-                        <div className="mt-2 grid gap-2">
-                          <textarea
-                            value={textDraft}
-                            onChange={(event) => {
-                              setTextDraft(event.target.value);
-                              if (detailSaveError) {
-                                setDetailSaveError(null);
-                              }
-                              if (detailSaveSuccess) {
-                                setDetailSaveSuccess(null);
-                              }
-                            }}
-                            className="w-full rounded-control border border-[#F0F0F0] bg-white px-3 py-2.5 text-body text-ink-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-70 resize-none min-h-[160px] max-h-[300px] overflow-y-scroll"
-                            aria-label={t("storage.detailDescription")}
-                            disabled={savingField === "text"}
-                          />
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                              onClick={cancelEditingField}
-                              disabled={savingField === "text"}
-                            >
-                              {t("common.cancel")}
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex h-9 items-center justify-center rounded-control border border-brand-500 bg-brand-500 px-3 text-sm font-semibold text-white transition hover:bg-brand-600"
-                              onClick={() => void saveTextChanges()}
-                              disabled={savingField === "text"}
-                            >
-                              {savingField === "text" ? t("common.saving") : t("common.save")}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="break-all whitespace-pre-wrap text-sm text-ink-700">
-                          {buildEntryText(selectedEntry, t("entries.noContent"))}
-                        </p>
-                      )}
-                    </div>
-                    {editingField !== "text" && (
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                        aria-label={t("storage.editFieldAria")}
-                        onClick={() => startEditingField("text")}
-                      >
-                        <PencilSquareIcon className="h-5 w-5" />
-                      </button>
-                    )}
-                  </article>
-
-                  {selectedEntry.flag === "TABLE" && selectedCsvTable && (
-                    <article className="rounded-control border border-brand-200 bg-white p-3">
-                      <div className="min-w-0 w-full">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                          {t("storage.detailTable")}
-                        </p>
-                        <div className="scrollbar-brand mt-2 max-h-72 overflow-auto rounded-control border border-brand-200">
-                          <table className="min-w-full border-collapse text-sm">
-                            <thead className="bg-brand-50">
-                              <tr>
-                                {selectedCsvTable.headers.map((header, index) => (
-                                  <th
-                                    key={`csv-h-${index}`}
-                                    className="border-b border-brand-200 px-3 py-2 text-left font-semibold text-ink-800"
-                                  >
-                                    {header || `Col ${index + 1}`}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {selectedCsvTable.rows.map((row, rowIndex) => (
-                                <tr key={`csv-r-${rowIndex}`} className="odd:bg-white even:bg-brand-50/40">
-                                  {row.map((cell, cellIndex) => (
-                                    <td
-                                      key={`csv-c-${rowIndex}-${cellIndex}`}
-                                      className="border-b border-brand-100 px-3 py-2 text-ink-700"
-                                    >
-                                      {cell}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    </article>
-                  )}
-
-                  {selectedTodoListText && (
-                    <article className="rounded-control border border-brand-200 bg-white p-3">
-                      <div className="min-w-0 w-full">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                          {t("storage.detailTodoList")}
-                        </p>
-                        <div className="scrollbar-brand mt-2 grid max-h-72 gap-2 overflow-y-auto pr-1">
-                          {renderTodoListMarkdown(selectedTodoListText)}
-                        </div>
-                      </div>
-                    </article>
-                  )}
-
-                  {selectedEntryMedia.length > 0 && (
-                    <article className="rounded-control border border-brand-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                        {t("storage.detailAttachments")}
-                      </p>
-                      <div className="mt-2 grid max-h-72 grid-cols-1 gap-2 overflow-y-auto pr-1">
-                        {selectedEntryMedia.map((media) => {
-                          const mime = media.mimeType.toLowerCase();
-                          const isImage = mime.startsWith("image/");
-                          const isVideo = mime.startsWith("video/");
-                          const isAudio = mime.startsWith("audio/");
-                          const isPdf = mime === "application/pdf";
-                          const downloadName = media.fileName || "archivo";
-
-                          return (
-                            <div key={media.id} className="relative rounded-control border border-brand-200 bg-brand-50 p-2">
-                              <a
-                                href={media.url!}
-                                download={downloadName}
-                                aria-label={`Descargar ${downloadName}`}
-                                title="Descargar"
-                                className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-300 bg-white text-brand-700 shadow-sm transition hover:bg-brand-100"
-                              >
-                                <ArrowDownTrayIcon className="h-4 w-4" />
-                              </a>
-                              <p className="mb-1 truncate text-xs font-semibold text-ink-800">{media.title}</p>
-
-                              {isImage && (
-                                <img
-                                  src={media.url!}
-                                  alt={media.fileName}
-                                  className="h-24 w-full rounded border border-brand-200 object-cover"
-                                />
-                              )}
-                              {isVideo && (
-                                <video src={media.url!} controls className="h-24 w-full rounded border border-brand-200 object-cover" />
-                              )}
-                              {isAudio && <audio src={media.url!} controls className="w-full" />}
-                              {isPdf && (
-                                <iframe src={media.url!} title={media.fileName} className="h-32 w-full rounded border border-brand-200" />
-                              )}
-                              {!isImage && !isVideo && !isAudio && !isPdf && (
-                                <a
-                                  href={media.url!}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex h-9 items-center rounded-control border border-brand-300 bg-white px-3 text-xs font-semibold text-brand-700 hover:bg-brand-100"
-                                >
-                                  {media.fileName}
-                                </a>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </article>
-                  )}
-
-                  {selectedEntryYoutubeVideos.length > 0 && (
-                    <article className="rounded-control border border-brand-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                        {t("storage.youtubeVideos")}
-                      </p>
-                      <div className="mt-2 grid gap-3">
-                        {selectedEntryYoutubeVideos.map((video) => (
-                          <div key={`${video.id}-${video.videoId}`} className="grid gap-2">
-                            {(() => {
-                              const badge = getYouTubeTypeBadgeConfig(video.isShort);
-                              return <span className={badge.className}>{badge.label}</span>;
-                            })()}
-                            <div className={video.isShort ? "flex justify-center" : ""}>
-                              <div
-                                className={`overflow-hidden rounded-control border border-brand-200 bg-brand-50 ${
-                                  video.isShort ? "w-full max-w-[250px]" : "w-full"
-                                }`}
-                                style={video.isShort ? { aspectRatio: "9 / 16" } : undefined}
-                              >
-                                <iframe
-                                  className={video.isShort ? "h-full w-full" : "h-44 w-full"}
-                                  src={video.embedUrl}
-                                  title={video.title}
-                                  loading="lazy"
-                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                  allowFullScreen
-                                />
-                              </div>
-                            </div>
-                            <a
-                              href={video.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="break-all text-sm font-semibold text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-800"
-                            >
-                              {video.title}
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    </article>
-                  )}
-
-                  {selectedEntryTwitchVideos.length > 0 && (
-                    <article className="rounded-control border border-violet-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                        {t("storage.twitchVideos")}
-                      </p>
-                      <div className="mt-2 grid gap-3">
-                        {selectedEntryTwitchVideos.map((video) => (
-                          <div key={`${video.id}-${video.embedUrl}`} className="grid gap-2">
-                            {(() => {
-                              const badge = getTwitchVariantBadgeConfig(video.variant);
-                              return <span className={badge.className}>{t(badge.labelKey)}</span>;
-                            })()}
-                            <div
-                              className={`overflow-hidden rounded-control border ${
-                                video.variant === "live"
-                                  ? "border-rose-200 bg-rose-50"
-                                  : video.variant === "vod"
-                                    ? "border-indigo-200 bg-indigo-50"
-                                    : "border-amber-200 bg-amber-50"
-                              }`}
-                            >
-                              <iframe
-                                className="h-44 w-full"
-                                src={video.embedUrl}
-                                title={video.title}
-                                loading="lazy"
-                                allow="autoplay; fullscreen; picture-in-picture"
-                                allowFullScreen
-                              />
-                            </div>
-                            <a
-                              href={video.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="break-all text-sm font-semibold text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-800"
-                            >
-                              {video.title}
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    </article>
-                  )}
-
-                  {selectedEntryOtherLinks.length > 0 && (
-                    <article className="rounded-control border border-brand-200 bg-white p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                        {t("storage.detailLinks")}
-                      </p>
-                      <div className="mt-2 grid gap-2">
-                        {selectedEntryOtherLinks.map((link) => {
-                          return (
-                            <a
-                              key={link.id}
-                              href={link.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="break-all text-sm font-semibold text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-800"
-                            >
-                              {link.title}
-                            </a>
-                          );
-                        })}
-                      </div>
-                    </article>
-                  )}
-                    {(selectedEntry.processingCategory || selectedEntry.keyIdeas.length > 0 || selectedEntry.actions.length > 0) && (
-                      <article className="rounded-control border border-brand-200 bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                          Procesado
-                        </p>
-                        {selectedEntry.processingCategory ? (
-                          <div className="mt-2">
-                            <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-1 text-sm font-semibold text-violet-800">
-                              {selectedEntry.processingCategory}
-                            </span>
-                          </div>
-                        ) : null}
-                        {selectedEntry.keyIdeas.length > 0 ? (
-                          <div className="mt-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Ideas clave</p>
-                            <div className="mt-2 grid gap-2">
-                              {selectedEntry.keyIdeas.map((idea) => (
-                                <p key={idea} className="rounded-control bg-violet-50 px-3 py-2 text-sm text-ink-800">
-                                  {idea}
-                                </p>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        {selectedEntry.actions.length > 0 ? (
-                          <div className="mt-3">
-                            <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Acciones</p>
-                            <div className="mt-2 grid gap-2">
-                              {selectedEntry.actions.map((action) => (
-                                <p key={action} className="rounded-control bg-rose-50 px-3 py-2 text-sm text-ink-800">
-                                  {action}
-                                </p>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </article>
-                    )}
-                    {selectedEntry.tags && selectedEntry.tags.length > 0 && (
-                      <article className="rounded-control border border-brand-200 bg-white p-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                          {t("storage.tags")}
-                        </p>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {selectedEntry.tags.map((tag) => (
-                            <span 
-                              key={tag.id} 
-                              className="inline-flex items-center rounded-full bg-brand-100 px-2.5 py-1 text-sm font-semibold text-brand-800"
-                            >
-                              #{tag.name}
-                            </span>
-                          ))}
-                        </div>
-                      </article>
-                    )}
-                    {detailSaveError && <p className={errorTextClass}>{t("common.errorPrefix", { message: detailSaveError })}</p>}
-                    {detailSaveSuccess && (
-                      <p className="text-sm font-semibold text-emerald-600">{detailSaveSuccess}</p>
-                    )}
-                  </div>
-                </section>
-
-                <button
-                  type="button"
-                  className={`hidden w-[220px] shrink-0 rounded-card border bg-white p-3 text-left shadow-card transform-gpu transition-all duration-300 ease-out lg:block ${rightCardScaleClass} ${
-                    rightRelatedEntry
-                      ? "border-brand-200 hover:-translate-y-0.5 hover:bg-brand-50 hover:shadow-lg active:scale-[0.99]"
-                      : "cursor-default border-brand-100 bg-brand-50/40 opacity-70"
-                  }`}
-                  onClick={() => {
-                    if (rightRelatedEntry) {
-                      openRelatedEntry(rightRelatedEntry, "right");
-                    }
-                  }}
-                  aria-label={rightRelatedEntry ? t("storage.openRelatedAria", { title: rightRelatedEntry.title }) : t("storage.noRelatedEntries")}
-                  disabled={!rightRelatedEntry || carouselSliding}
-                >
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">{t("storage.relatedRight")}</p>
-                  {rightRelatedEntry ? (
-                    <>
-                      <h4 className="mt-1 break-words text-sm font-bold text-ink-900">{rightRelatedEntry.title}</h4>
-                      <p className="mt-2 break-words text-xs text-ink-700 overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
-                        {buildEntryText(rightRelatedEntry, t("entries.noContent"))}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-1 text-xs text-ink-600">{t("storage.noRelatedEntries")}</p>
-                  )}
-                </button>
-                </div>
-              </div>
-            </div>
-          )}
           {deleteConfirmOpen && pendingDeleteEntry && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/25 p-4 backdrop-blur-sm"
@@ -2796,33 +2232,30 @@ export function StorageEntriesSection({
                   <div className="scrollbar-brand mt-2 grid max-h-96 gap-3 overflow-y-auto pr-1">
                     {selectedEntryYoutubeVideos.map((video) => (
                       <div key={`${video.id}-${video.videoId}`} className="grid gap-2">
-                        {video.isShort && (
-                          <span className="inline-flex w-fit rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-rose-700">
-                            Shorts
-                          </span>
-                        )}
+                        {(() => {
+                          const badge = getYouTubeTypeBadgeConfig(video.isShort);
+                          return <span className={badge.className}>{badge.label}</span>;
+                        })()}
+
                         <div className={video.isShort ? "flex justify-center" : ""}>
-                          <div
-                            className={`overflow-hidden rounded-control border border-brand-200 bg-brand-50 ${
-                              video.isShort ? "w-full max-w-[200px]" : "w-full"
-                            }`}
-                            style={video.isShort ? { aspectRatio: "9 / 16" } : undefined}
-                          >
-                            <iframe
-                              className={video.isShort ? "h-full w-full" : "h-32 w-full"}
-                              src={video.embedUrl}
+                          <div className={video.isShort ? "w-full max-w-[180px]" : "w-full max-w-[320px]"}>
+                            <HeroVideoDialog
+                              animationStyle="from-center"
+                              videoSrc={video.embedUrl}
+                              thumbnailSrc={getYoutubeThumbnail(video.videoId)}
+                              thumbnailAlt={video.title}
                               title={video.title}
-                              loading="lazy"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                              allowFullScreen
+                              aspectRatio={video.isShort ? "short" : "video"}
                             />
                           </div>
                         </div>
+
                         <a
                           href={video.url}
                           target="_blank"
                           rel="noreferrer"
                           className="break-all text-sm font-semibold text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-800"
+                          onClick={(e) => e.stopPropagation()}
                         >
                           {video.title}
                         </a>
@@ -2832,55 +2265,67 @@ export function StorageEntriesSection({
                 </article>
               )}
 
-              {selectedEntryTwitchVideos.length > 0 && (
-                <article className="p-3" style={{ 
-                  background: 'rgba(255, 255, 255, 0.77)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  borderRadius: '16px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)'
-                }}>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                    {t("storage.twitchVideos")}
-                  </p>
-                  <div className="scrollbar-brand mt-2 grid max-h-96 gap-3 overflow-y-auto pr-1">
-                    {selectedEntryTwitchVideos.map((video) => (
-                      <div key={`${video.id}-${video.embedUrl}`} className="grid gap-2">
-                        {(() => {
-                          const badge = getTwitchVariantBadgeConfig(video.variant);
-                          return <span className={badge.className}>{t(badge.labelKey)}</span>;
-                        })()}
-                        <div
-                          className={`overflow-hidden rounded-control border ${
-                            video.variant === "live"
-                              ? "border-rose-200 bg-rose-50"
-                              : video.variant === "vod"
-                                ? "border-indigo-200 bg-indigo-50"
-                                : "border-amber-200 bg-amber-50"
-                          }`}
-                        >
-                          <iframe
-                            className="h-32 w-full"
-                            src={video.embedUrl}
-                            title={video.title}
-                            loading="lazy"
-                            allow="autoplay; fullscreen; picture-in-picture"
-                            allowFullScreen
-                          />
-                        </div>
-                        <a
-                          href={video.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="break-all text-sm font-semibold text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-800"
-                        >
-                          {video.title}
-                        </a>
+            {selectedEntryTwitchVideos.length > 0 && (
+              <article className="p-3" style={{ 
+                background: 'rgba(255, 255, 255, 0.77)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                borderRadius: '16px',
+                border: '1px solid rgba(255, 255, 255, 0.3)'
+              }}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                  {t("storage.twitchVideos")}
+                </p>
+                <div className="scrollbar-brand mt-2 grid max-h-96 gap-3 overflow-y-auto pr-1">
+                  {selectedEntryTwitchVideos.map((video) => (
+                    <div key={`${video.id}-${video.embedUrl}`} className="grid gap-2">
+                      {(() => {
+                        const badge = getTwitchVariantBadgeConfig(video.variant);
+                        return <span className={badge.className}>{t(badge.labelKey)}</span>;
+                      })()}
+
+                      <div className="w-full max-w-[320px]">
+                        <HeroVideoDialog
+                          animationStyle="from-center"
+                          videoSrc={video.embedUrl}
+                          title={video.title}
+                          aspectRatio="video"
+                          triggerContent={
+                            <div
+                              className={`relative aspect-video overflow-hidden rounded-control border ${
+                                video.variant === "live"
+                                  ? "border-rose-200 bg-rose-50"
+                                  : video.variant === "vod"
+                                    ? "border-indigo-200 bg-indigo-50"
+                                    : "border-amber-200 bg-amber-50"
+                              }`}
+                            >
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/30 backdrop-blur-md">
+                                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-md">
+                                    <TwitchIcon className="h-5 w-5 text-violet-700" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          }
+                        />
                       </div>
-                    ))}
-                  </div>
-                </article>
-              )}
+
+                      <a
+                        href={video.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="break-all text-sm font-semibold text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-800"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {video.title}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            )}
 
               {selectedEntryOtherLinks.length > 0 && (
                 <article className="p-3" style={{ 
