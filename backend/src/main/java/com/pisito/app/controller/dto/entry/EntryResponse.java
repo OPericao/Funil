@@ -18,7 +18,8 @@ public record EntryResponse(
     List<String> actions,
     Instant notificationDate,
     Instant createdAt,
-    Instant updatedAt
+    Instant updatedAt,
+    EntrySearchDebugResponse searchDebug
 ) {
 }
 

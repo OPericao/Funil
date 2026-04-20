@@ -165,7 +165,7 @@ export function InboxEntryCreateForm({
 
   return (
     <form className="grid w-full gap-3 font-sans inbox-glass-text" onSubmit={handleSubmit}>
-      <section className="glass-card h-auto w-full max-w-full p-5 md:p-6">
+      <section className="glass-card h-auto w-full max-w-full border-white/90 bg-[linear-gradient(180deg,rgba(255,247,239,0.95)_0%,rgba(228,242,255,0.9)_100%)] p-5 shadow-[0_24px_56px_rgba(15,23,42,0.12)] md:p-6">
         {heading ? (
           <div className="mb-4">
             <h2 className="heading-title text-center text-ink-900">{heading}</h2>
@@ -212,10 +212,10 @@ export function InboxEntryCreateForm({
                   onChange={(event) => appendMediaFiles(event.target.files ?? null)}
                 />
                 <div
-                  className={`h-full border-2 border-dashed rounded-2xl px-4 py-5 text-center transition flex items-center justify-center ${
+                  className={`flex h-full items-center justify-center rounded-2xl border-2 border-dashed px-4 py-5 text-center transition ${
                     isFileDropActive
-                      ? "border-white/40 bg-[rgba(240,240,240,0.4)] text-ink-900"
-                      : "border-white/30 bg-[rgba(240,240,240,0.25)] text-ink-700"
+                      ? "border-white/90 bg-[linear-gradient(180deg,rgba(255,249,242,0.92)_0%,rgba(230,243,255,0.86)_100%)] text-ink-900 shadow-[0_16px_30px_rgba(15,23,42,0.08)]"
+                      : "border-white/75 bg-[linear-gradient(180deg,rgba(255,250,244,0.84)_0%,rgba(236,244,252,0.76)_100%)] text-ink-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
                   }`}
                   role="button"
                   tabIndex={0}
@@ -241,7 +241,7 @@ export function InboxEntryCreateForm({
                     {values.mediaFiles.map((file, index) => {
                       const previewUrl = previewUrls[index];
                       return (
-                        <div key={`${file.name}-${file.lastModified}-${index}`} className="rounded-lg border border-brand-200 bg-white/90 p-2">
+                        <div key={`${file.name}-${file.lastModified}-${index}`} className="rounded-lg border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,242,0.94)_0%,rgba(239,246,255,0.88)_100%)] p-2 shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
                           <div className="mb-1 flex items-start justify-between gap-2">
                             <p className="truncate text-xs font-semibold text-ink-900">{file.name}</p>
                             <button
@@ -281,7 +281,7 @@ export function InboxEntryCreateForm({
                   type="button"
                   aria-label={t("inbox.filesLabel")}
                   disabled={submitting}
-                  className="inline-flex w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-white/30 bg-[rgba(240,240,240,0.25)] text-2xl font-bold leading-none text-ink-700 transition hover:border-white/40 hover:bg-[rgba(240,240,240,0.4)] disabled:cursor-not-allowed disabled:opacity-70"
+                  className="inline-flex w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-white/75 bg-[linear-gradient(180deg,rgba(255,250,244,0.84)_0%,rgba(236,244,252,0.78)_100%)] text-2xl font-bold leading-none text-ink-700 shadow-[0_12px_24px_rgba(15,23,42,0.06)] transition hover:border-white/90 hover:bg-[linear-gradient(180deg,rgba(255,248,241,0.94)_0%,rgba(227,242,255,0.86)_100%)] disabled:cursor-not-allowed disabled:opacity-70"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -305,7 +305,7 @@ export function InboxEntryCreateForm({
         </div>
       </section>
 
-      <section className="glass-card h-auto w-full max-w-full overflow-visible p-3">
+      <section className="glass-card h-auto w-full max-w-full overflow-visible border-white/90 bg-[linear-gradient(180deg,rgba(255,247,239,0.94)_0%,rgba(230,243,255,0.88)_100%)] p-3 shadow-[0_20px_44px_rgba(15,23,42,0.10)]">
         <div className="grid grid-cols-4 gap-2 sm:flex sm:items-center sm:gap-3">
           <IconToggleButton
             label={t("icon.youtube")}
@@ -354,6 +354,14 @@ export function InboxEntryCreateForm({
             onClick={() => togglePrimaryOption("checklist")}
           >
             <ChecklistIcon className="h-6 w-6" />
+          </IconToggleButton>
+          <IconToggleButton
+            label={t("icon.enumeration")}
+            active={values.selectedPrimaryOption === "enumeration"}
+            disabled={submitting}
+            onClick={() => togglePrimaryOption("enumeration")}
+          >
+            <ListBulletIcon className="h-6 w-6" />
           </IconToggleButton>
 
           <div className="col-span-4 my-1 hidden h-11 w-px justify-self-center bg-gray-700 sm:mx-3 sm:my-0 sm:block" />

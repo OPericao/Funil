@@ -30,6 +30,7 @@ import {
   fetchEntryRelationships,
 } from "../../../api/resources";
 import type { EntryItem, EntryRelationshipItem, ResourceItem } from "../../../types/resource";
+import { EntryDetailContent } from "../storage/EntryDetailContent";
 
 type GraphNodeData = {
   label: string;
@@ -54,6 +55,38 @@ type EntryGraphFeatures = {
   resourceTypes: Set<string>;
   tokens: Set<string>;
 };
+
+function isChecklistResource(resource: ResourceItem) {
+  const label = `${resource.title ?? ""} ${resource.fileName ?? ""}`.toLowerCase();
+  return label.includes("checklist") || label.includes("todo") || label.includes("task");
+}
+
+function buildRelationshipEntryText(entry: EntryItem) {
+  const textResources = entry.resources
+    .filter((resource) => resource.type === "RAW" && !isChecklistResource(resource))
+    .map((resource) => resource.textContent?.trim() ?? "")
+    .filter(Boolean);
+
+  if (textResources.length > 0) {
+    return textResources.join("\n\n");
+  }
+
+  for (const resource of entry.resources) {
+    const preview =
+      resource.textContent
+      ?? resource.description
+      ?? resource.contentPreview
+      ?? resource.url
+      ?? resource.fileName
+      ?? resource.title
+      ?? resource.siteName;
+    if (preview) {
+      return preview;
+    }
+  }
+
+  return "Sin contenido";
+}
 
 const HANDLE_STYLE: CSSProperties = {
   width: 12,
@@ -518,6 +551,7 @@ export function RelationshipGraph() {
   const [entries, setEntries] = useState<EntryItem[]>([]);
   const [manualRelationships, setManualRelationships] = useState<EntryRelationshipItem[]>([]);
   const [rf, setRf] = useState<ReactFlowInstance<Node<GraphNodeData>, Edge<GraphEdgeData>> | null>(null);
+  const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
 
   const nodeTypes = useMemo(() => ({ relationshipNode: RelationshipNode }), []);
   const handleDeleteManualRelationship = useCallback((relationshipId: number) => {
@@ -531,6 +565,10 @@ export function RelationshipGraph() {
     })();
   }, []);
   const edgeTypes = useMemo(() => ({ manualRelationship: ManualRelationshipEdge }), []);
+  const refreshEntries = useCallback(async () => {
+    const entriesData = await fetchEntries();
+    setEntries(entriesData);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -611,8 +649,17 @@ export function RelationshipGraph() {
         return;
       }
       rf.fitView({ nodes: [node], padding: 0.8, duration: 320 });
+      const entryId = (node.data as GraphNodeData | undefined)?.entryId;
+      if (entryId) {
+        setSelectedEntryId(entryId);
+      }
     },
     [rf]
+  );
+
+  const selectedEntry = useMemo(
+    () => (selectedEntryId === null ? null : entries.find((entry) => entry.id === selectedEntryId) ?? null),
+    [entries, selectedEntryId]
   );
 
   useEffect(() => {
@@ -673,7 +720,7 @@ export function RelationshipGraph() {
   );
 
   return (
-    <div className="h-[calc(100vh-220px)] w-full overflow-hidden rounded-2xl border border-white/40 bg-[radial-gradient(circle_at_top,_rgba(20,184,166,0.16),_transparent_35%),linear-gradient(180deg,_rgba(255,255,255,0.9),_rgba(248,250,252,0.92))] backdrop-blur">
+    <div className="relative h-[calc(100vh-220px)] w-full overflow-hidden rounded-2xl border border-white/40 bg-[radial-gradient(circle_at_top,_rgba(20,184,166,0.16),_transparent_35%),linear-gradient(180deg,_rgba(255,255,255,0.9),_rgba(248,250,252,0.92))] backdrop-blur">
       {loading ? (
         <div className="grid h-full place-items-center">
           <p className="text-sm font-semibold text-ink-700">Cargando grafo...</p>
@@ -720,6 +767,67 @@ export function RelationshipGraph() {
           />
         </ReactFlow>
       )}
+
+      {selectedEntry ? (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/28 p-4 backdrop-blur-sm"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedEntryId(null);
+            }
+          }}
+        >
+          <section className="w-full max-w-[560px] rounded-[28px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,243,0.96)_0%,rgba(238,244,250,0.92)_100%)] p-5 shadow-[0_28px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detalle de nota</p>
+                <h3 className="mt-2 break-words text-xl font-extrabold text-slate-900">{selectedEntry.title}</h3>
+                <p className="mt-2 text-sm font-medium text-slate-600">
+                  {selectedEntry.processingCategory || (selectedEntry.flag ? selectedEntry.flag.toLowerCase() : "nota")}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-600 shadow-sm transition hover:bg-slate-100"
+                aria-label="Cerrar detalle"
+                onClick={() => setSelectedEntryId(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="scrollbar-brand mt-5 max-h-[calc(100vh-11rem)] overflow-y-auto pr-1">
+              <EntryDetailContent
+                entry={selectedEntry}
+                onEntriesUpdated={refreshEntries}
+                onUnauthorized={() => {
+                  window.location.reload();
+                }}
+              />
+            </div>
+
+            {/*
+            {selectedEntry.tags.length > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {selectedEntry.tags.map((tag) => (
+                  <span
+                    key={`detail-tag-${tag.id}`}
+                    className="inline-flex rounded-full border border-slate-200 bg-white/78 px-2.5 py-1 text-xs font-semibold text-slate-700"
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="mt-5 rounded-[22px] border border-white/85 bg-[linear-gradient(180deg,rgba(252,250,246,0.94)_0%,rgba(239,244,249,0.9)_100%)] p-4 shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
+              <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">
+                {buildRelationshipEntryText(selectedEntry)}
+              </p>
+            </div>
+            */}
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

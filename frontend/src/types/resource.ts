@@ -42,6 +42,19 @@ export type EntryItem = {
   notificationDate: string | null;
   createdAt: string;
   updatedAt: string;
+  searchDebug?: {
+    topicScore: number;
+    tagScore: number;
+    noteScore: number;
+    titleScore: number;
+    semanticScore: number;
+    conflictPenalty: number;
+    structuredScore: number;
+    finalScore: number;
+    directTagMatches: number;
+    queryTopics: string[];
+    tagTopics: string[];
+  } | null;
 };
 
 export type EntryMentionItem = {

@@ -56,13 +56,13 @@ export function ContentInboxProfileSection({
 
   return (
     <section className="flex w-full flex-col gap-4">
-      <GlassCard className="p-5 md:p-6">
+      <GlassCard className="border-white/90 bg-[linear-gradient(180deg,rgba(255,249,243,0.95)_0%,rgba(238,244,250,0.9)_100%)] p-5 shadow-[0_24px_52px_rgba(15,23,42,0.10)] md:p-6">
         <div className="mb-4">
           <h2 className="heading-title text-center text-ink-900">{t("profile.title")}</h2>
         </div>
 
         <div className="grid gap-3">
-          <div className="flex items-center justify-between rounded-control border border-[#F0F0F0] bg-white/25 p-3">
+          <div className="flex items-center justify-between rounded-[24px] border border-white/85 bg-[linear-gradient(180deg,rgba(252,250,246,0.94)_0%,rgba(239,244,249,0.9)_100%)] p-3 shadow-[0_14px_30px_rgba(15,23,42,0.06)] backdrop-blur-md">
             <div className="grid gap-0.5">
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
                 {t("profile.username")}
@@ -71,7 +71,7 @@ export function ContentInboxProfileSection({
             </div>
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-[#F0F0F0] text-brand-700 transition hover:bg-[#13505B] hover:text-[#F0F0F0]"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/85 bg-[linear-gradient(180deg,rgba(248,251,255,0.94)_0%,rgba(236,243,251,0.88)_100%)] text-brand-700 shadow-[0_10px_22px_rgba(15,23,42,0.05)] transition hover:bg-[#13505B] hover:text-[#F0F0F0]"
               aria-label={t("profile.editUsernameAria")}
               onClick={() => onOpenProfileForm("username")}
             >
@@ -79,7 +79,7 @@ export function ContentInboxProfileSection({
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-control border border-[#F0F0F0] bg-white/25 p-3">
+          <div className="flex items-center justify-between rounded-[24px] border border-white/85 bg-[linear-gradient(180deg,rgba(252,250,246,0.94)_0%,rgba(239,244,249,0.9)_100%)] p-3 shadow-[0_14px_30px_rgba(15,23,42,0.06)] backdrop-blur-md">
             <div className="grid gap-0.5">
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
                 {t("profile.password")}
@@ -88,7 +88,7 @@ export function ContentInboxProfileSection({
             </div>
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-[#F0F0F0] text-brand-700 transition hover:bg-[#13505B] hover:text-[#F0F0F0]"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/85 bg-[linear-gradient(180deg,rgba(248,251,255,0.94)_0%,rgba(236,243,251,0.88)_100%)] text-brand-700 shadow-[0_10px_22px_rgba(15,23,42,0.05)] transition hover:bg-[#13505B] hover:text-[#F0F0F0]"
               aria-label={t("profile.editPasswordAria")}
               onClick={() => onOpenProfileForm("password")}
             >
@@ -99,12 +99,12 @@ export function ContentInboxProfileSection({
       </GlassCard>
 
       {activeProfileForm === "username" ? (
-        <GlassCard className="p-5 md:p-6">
+        <GlassCard className="border-white/90 bg-[linear-gradient(180deg,rgba(255,249,243,0.95)_0%,rgba(238,244,250,0.9)_100%)] p-5 shadow-[0_22px_48px_rgba(15,23,42,0.09)] md:p-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="heading-title text-ink-900">{t("profile.changeUsernameTitle")}</h2>
             <button
               type="button"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-rose-300 text-rose-700 transition hover:bg-rose-50"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-white/85 bg-[linear-gradient(180deg,rgba(255,247,243,0.92)_0%,rgba(255,238,240,0.86)_100%)] text-rose-700 shadow-[0_10px_18px_rgba(15,23,42,0.05)] transition hover:bg-rose-50"
               aria-label={t("profile.hideChangeUsernameAria")}
               onClick={onCloseProfileForm}
             >
@@ -133,12 +133,12 @@ export function ContentInboxProfileSection({
       ) : null}
 
       {activeProfileForm === "password" ? (
-        <GlassCard className="p-5 md:p-6">
+        <GlassCard className="border-white/90 bg-[linear-gradient(180deg,rgba(255,249,243,0.95)_0%,rgba(238,244,250,0.9)_100%)] p-5 shadow-[0_22px_48px_rgba(15,23,42,0.09)] md:p-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="heading-title text-ink-900">{t("profile.changePasswordTitle")}</h2>
             <button
               type="button"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-rose-300 text-rose-700 transition hover:bg-rose-50"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-white/85 bg-[linear-gradient(180deg,rgba(255,247,243,0.92)_0%,rgba(255,238,240,0.86)_100%)] text-rose-700 shadow-[0_10px_18px_rgba(15,23,42,0.05)] transition hover:bg-rose-50"
               aria-label={t("profile.hideChangePasswordAria")}
               onClick={onCloseProfileForm}
             >

@@ -18,7 +18,7 @@ export const formStackClass = "mb-4 grid gap-2.5";
 export const fieldLabelClass = "grid gap-1.5 heading-subtitle text-ink-700";
 
 export const inputClass =
-  "solid-input w-full px-3 py-2.5 text-body text-ink-900 placeholder:text-ink-500 shadow-[0_2px_8px_rgba(0,0,0,0.08)] outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-70";
+  "w-full rounded-[22px] border border-slate-200/85 bg-[linear-gradient(180deg,rgba(248,251,255,0.96)_0%,rgba(236,243,251,0.9)_100%)] px-3 py-2.5 text-body text-ink-900 placeholder:text-slate-500 shadow-[0_14px_30px_rgba(15,23,42,0.06),inset_0_1px_0_rgba(255,255,255,0.92),inset_0_-1px_0_rgba(203,213,225,0.24)] outline-none backdrop-blur-md transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-70";
 
 export const textareaClass = `${inputClass} min-h-24 resize-none`;
 

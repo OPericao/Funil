@@ -35,6 +35,9 @@ public class EntryEmbedding {
     @Column(name = "embedding_json", nullable = false, columnDefinition = "TEXT")
     private String embeddingJson;
 
+    @Column(name = "focus_embedding_json", columnDefinition = "TEXT")
+    private String focusEmbeddingJson;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -88,6 +91,14 @@ public class EntryEmbedding {
 
     public void setEmbeddingJson(String embeddingJson) {
         this.embeddingJson = embeddingJson;
+    }
+
+    public String getFocusEmbeddingJson() {
+        return focusEmbeddingJson;
+    }
+
+    public void setFocusEmbeddingJson(String focusEmbeddingJson) {
+        this.focusEmbeddingJson = focusEmbeddingJson;
     }
 
     public Instant getUpdatedAt() {

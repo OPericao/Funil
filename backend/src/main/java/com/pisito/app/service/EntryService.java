@@ -3,6 +3,7 @@ package com.pisito.app.service;
 import com.pisito.app.controller.dto.entry.CreateEntryResourceRequest;
 import com.pisito.app.controller.dto.entry.EntryMentionResponse;
 import com.pisito.app.controller.dto.entry.CreateNoteRequest;
+import com.pisito.app.controller.dto.entry.EntrySearchDebugResponse;
 import com.pisito.app.controller.dto.entry.EntryResponse;
 import com.pisito.app.controller.dto.entry.UpdateEntryRequest;
 import com.pisito.app.controller.dto.resource.CreateLinkResourceRequest;
@@ -49,6 +50,30 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class EntryService {
 
     private static final Logger log = LoggerFactory.getLogger(EntryService.class);
+    private static final Map<String, List<String>> BROAD_QUERY_ALIASES = Map.of(
+        "informatica", List.of("tecnologia", "technology", "tech", "programacion", "programming", "software", "desarrollo", "development", "web", "frontend", "backend", "codigo", "code", "computacion", "computing"),
+        "comida", List.of("food", "foods", "meal", "meals", "dish", "dishes", "cocina", "cooking", "receta", "recipe", "recipes", "plato", "gastronomia", "restaurant", "restaurante", "ingredientes", "ingredients", "alimento", "alimentos"),
+        "musica", List.of("music", "song", "songs", "cancion", "canciones", "album", "albums", "artista", "artist", "playlist", "concierto", "concert"),
+        "viaje", List.of("travel", "trip", "trips", "journey", "turismo", "tourism", "destino", "destination", "ruta", "route", "escapada", "getaway", "vuelo", "flight", "hotel")
+    );
+    private static final List<List<String>> LEXICAL_FAMILY_GROUPS = List.of(
+        List.of("diversion", "diversiones", "divertido", "divertida", "divertidos", "divertidas", "divertir", "divertirse", "entretenido", "entretenida", "entretenimiento", "ocio", "ameno", "amena"),
+        List.of("comida", "comidas", "comer", "comiendo", "alimento", "alimentos", "alimentacion", "cocina", "cocinar", "receta", "recetas", "plato", "platos"),
+        List.of("viaje", "viajes", "viajar", "viajero", "viajera", "turismo", "turistico", "turistica", "destino", "destinos", "ruta", "rutas"),
+        List.of("musica", "musical", "musicales", "musico", "cancion", "canciones", "sonido", "sonidos"),
+        List.of("tecnologia", "tecnologico", "tecnologica", "tecnologicos", "tecnologicas", "digital", "software", "programacion", "programar", "codigo", "desarrollo")
+    );
+    private static final Map<String, List<String>> VECTOR_TOPIC_TERMS = Map.of(
+        "technology", List.of("technology", "tecnologia", "software", "web", "frontend"),
+        "web", List.of("web", "website", "frontend", "backend"),
+        "frontend", List.of("frontend", "web", "ui", "react"),
+        "backend", List.of("backend", "api", "database", "server"),
+        "food", List.of("food", "comida", "receta", "ingredientes"),
+        "vegetable", List.of("vegetable", "verduras", "food"),
+        "fruit", List.of("fruit", "fruta", "food"),
+        "music", List.of("music", "musica", "cancion", "album"),
+        "travel", List.of("travel", "viaje", "turismo", "destino")
+    );
 
     private final EntryRepository entryRepository;
     private final ResourceRepository resourceRepository;
@@ -122,15 +147,15 @@ public class EntryService {
     @Transactional
     public List<EntryResponse> search(Long userId, String rawQuery) {
         String query = trimRequired(rawQuery, "q is required");
+        boolean broadQuery = isBroadSemanticQuery(query);
+        String semanticQuery = buildSemanticQuery(query, broadQuery);
         List<Entry> entries = entryRepository.findAllByUserIdOrderByCreateDateDesc(userId);
         if (entries.isEmpty()) {
             return List.of();
         }
 
-        Optional<double[]> queryEmbedding = generateQueryEmbedding(query);
-        List<SearchMatch> matches = queryEmbedding.isPresent() && entryVectorStoreService.isReady()
-            ? searchWithPgvector(userId, query, entries, queryEmbedding.get())
-            : searchInMemory(entries, query, queryEmbedding);
+        Optional<QueryEmbeddings> queryEmbeddings = generateQueryEmbeddings(query, semanticQuery);
+        List<SearchCandidate> matches = searchHybrid(userId, query, entries, queryEmbeddings, broadQuery);
 
         if (matches.isEmpty()) {
             return List.of();
@@ -145,7 +170,46 @@ public class EntryService {
             ))
             .values()
             .stream()
-            .map(match -> toEntryResponse(match.entry()))
+            .map(this::toEntryResponse)
+            .toList();
+    }
+
+    private List<SearchCandidate> searchHybrid(
+        Long userId,
+        String query,
+        List<Entry> entries,
+        Optional<QueryEmbeddings> queryEmbeddings,
+        boolean broadQuery
+    ) {
+        SearchQueryContext context = buildSearchQueryContext(query, broadQuery);
+        Map<Long, Double> semanticScores = queryEmbeddings.isPresent() && entryVectorStoreService.isReady()
+            ? collectSemanticScores(userId, queryEmbeddings.get(), context)
+            : Map.of();
+
+        List<SearchCandidate> candidates = entries.stream()
+            .map(entry -> toSearchCandidate(entry, context, semanticScores.getOrDefault(entry.getId(), 0.0d)))
+            .filter(candidate -> candidate.finalScore() > 0.0d)
+            .toList();
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+
+        boolean hasStrongStructuredMatches = candidates.stream().anyMatch(candidate ->
+            candidate.structuredScore() >= 0.55d
+                || candidate.topicScore() >= 0.50d
+                || candidate.tagScore() >= 0.60d
+        );
+
+        return candidates.stream()
+            .filter(candidate -> shouldIncludeCandidate(candidate, context, hasStrongStructuredMatches))
+            .sorted(
+                Comparator.comparingDouble(SearchCandidate::finalScore)
+                    .reversed()
+                    .thenComparing(SearchCandidate::structuredScore, Comparator.reverseOrder())
+                    .thenComparing(SearchCandidate::semanticScore, Comparator.reverseOrder())
+                    .thenComparing(candidate -> candidate.entry().getUpdateDate(), Comparator.reverseOrder())
+            )
+            .limit(context.broadQuery() ? 12 : 20)
             .toList();
     }
 
@@ -572,6 +636,29 @@ public class EntryService {
     }
 
     private EntryResponse toEntryResponse(Entry entry) {
+        return toEntryResponse(entry, null);
+    }
+
+    private EntryResponse toEntryResponse(SearchCandidate candidate) {
+        return toEntryResponse(
+            candidate.entry(),
+            new EntrySearchDebugResponse(
+                roundDebugScore(candidate.topicScore()),
+                roundDebugScore(candidate.tagScore()),
+                roundDebugScore(candidate.noteScore()),
+                roundDebugScore(candidate.titleScore()),
+                roundDebugScore(candidate.semanticScore()),
+                roundDebugScore(candidate.conflictPenalty()),
+                roundDebugScore(candidate.structuredScore()),
+                roundDebugScore(candidate.finalScore()),
+                candidate.directTagMatches(),
+                new ArrayList<>(candidate.queryTopics()),
+                new ArrayList<>(candidate.tagTopics())
+            )
+        );
+    }
+
+    private EntryResponse toEntryResponse(Entry entry, EntrySearchDebugResponse searchDebug) {
         List<ResourceResponse> resources = entry.getResources().stream()
             .map(this::toResourceResponse)
             .toList();
@@ -591,8 +678,13 @@ public class EntryService {
             readStringList(entry.getProcessingActionsJson()),
             entry.getNotificationDate(),
             entry.getCreateDate(),
-            entry.getUpdateDate()
+            entry.getUpdateDate(),
+            searchDebug
         );
+    }
+
+    private double roundDebugScore(double value) {
+        return Math.round(value * 1000.0d) / 1000.0d;
     }
 
     private ResourceResponse toResourceResponse(Resource resource) {
@@ -711,25 +803,213 @@ public class EntryService {
         return key.substring(separatorIndex + 1);
     }
 
-    private Optional<double[]> generateQueryEmbedding(String query) {
+    private Optional<QueryEmbeddings> generateQueryEmbeddings(String query, String semanticQuery) {
         try {
-            return Optional.of(entrySemanticIndexService.ensureEmbeddingForQuery(query));
+            double[] contentVector = entrySemanticIndexService.ensureEmbeddingForQuery(query);
+            double[] focusVector = normalizeForSearch(query).equals(normalizeForSearch(semanticQuery))
+                ? contentVector
+                : entrySemanticIndexService.ensureEmbeddingForQuery(semanticQuery);
+            return Optional.of(new QueryEmbeddings(contentVector, focusVector));
         } catch (Exception ex) {
             log.warn("Semantic query embedding failed, falling back to lexical search");
             return Optional.empty();
         }
     }
 
-    private List<SearchMatch> searchWithPgvector(Long userId, String query, List<Entry> entries, double[] queryEmbedding) {
-        List<EntryVectorStoreService.NeighborMatch> semanticCandidates = entryVectorStoreService.findNearestEntryMatches(
-            userId,
-            queryEmbedding,
-            40,
-            0.22d,
-            null
+    private SearchQueryContext buildSearchQueryContext(String query, boolean broadQuery) {
+        String normalizedQuery = normalizeForSearch(query);
+        Set<String> queryTokens = tokenize(normalizedQuery);
+        Set<String> supportTerms = buildQuerySupportTerms(query, broadQuery);
+        Set<String> canonicalTopics = entrySemanticIndexService.extractCanonicalTopics(String.join(" ", supportTerms));
+        return new SearchQueryContext(query, normalizedQuery, queryTokens, supportTerms, canonicalTopics, broadQuery);
+    }
+
+    private Map<Long, Double> collectSemanticScores(Long userId, QueryEmbeddings queryEmbeddings, SearchQueryContext context) {
+        Map<Long, Double> semanticScores = new LinkedHashMap<>();
+
+        mergeSemanticScores(
+            semanticScores,
+            entryVectorStoreService.findNearestEntryMatches(
+                userId,
+                queryEmbeddings.content(),
+                context.broadQuery() ? 24 : 36,
+                context.broadQuery() ? 0.16d : 0.14d,
+                null,
+                EntryVectorStoreService.VectorKind.CONTENT
+            ),
+            context.broadQuery() ? 0.35d : 0.45d
         );
-        if (semanticCandidates.isEmpty()) {
-            return searchInMemory(entries, query, Optional.of(queryEmbedding));
+        mergeSemanticScores(
+            semanticScores,
+            entryVectorStoreService.findNearestEntryMatches(
+                userId,
+                queryEmbeddings.focus(),
+                context.broadQuery() ? 24 : 28,
+                context.broadQuery() ? 0.14d : 0.12d,
+                null,
+                EntryVectorStoreService.VectorKind.FOCUS
+            ),
+            context.broadQuery() ? 0.65d : 0.55d
+        );
+
+        return semanticScores;
+    }
+
+    private void mergeSemanticScores(
+        Map<Long, Double> semanticScores,
+        List<EntryVectorStoreService.NeighborMatch> candidates,
+        double weight
+    ) {
+        for (EntryVectorStoreService.NeighborMatch candidate : candidates) {
+            semanticScores.merge(candidate.entryId(), candidate.similarity() * weight, Double::max);
+        }
+    }
+
+    private SearchCandidate toSearchCandidate(Entry entry, SearchQueryContext context, double semanticScore) {
+        String searchDocument = entrySemanticIndexService.buildSearchDocument(entry);
+        String normalizedDocument = normalizeForSearch(searchDocument);
+        String normalizedTitle = normalizeForSearch(entry.getTitle());
+
+        double topicScore = computeCanonicalTopicScore(entry, context.canonicalTopics());
+        Set<String> queryTopics = entrySemanticIndexService.extractCanonicalTopics(String.join(" ", context.supportTerms()));
+        Set<String> tagTopics = entrySemanticIndexService.extractCanonicalTopics(
+            entry.getTags().stream()
+                .map(Tag::getName)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining(" "))
+        );
+        int directTagMatches = countDirectTagMatches(entry, context.normalizedQuery(), context.queryTokens(), context.supportTerms(), context.broadQuery());
+        double tagScore = computeTagSupportScore(
+            entry,
+            context.normalizedQuery(),
+            context.queryTokens(),
+            context.supportTerms(),
+            context.broadQuery()
+        );
+        double noteScore = computeDocumentSupportScore(
+            normalizedDocument,
+            context.normalizedQuery(),
+            context.queryTokens(),
+            context.supportTerms(),
+            context.broadQuery()
+        );
+        double titleScore = computeTitleSupportScore(
+            normalizedTitle,
+            context.normalizedQuery(),
+            context.supportTerms(),
+            context.broadQuery()
+        );
+        double conflictPenalty = computeConflictPenalty(entry, context.canonicalTopics(), context.broadQuery());
+
+        double structuredScore = context.broadQuery()
+            ? (tagScore * 0.42d) + (noteScore * 0.24d) + (titleScore * 0.12d) + (topicScore * 0.22d)
+            : (tagScore * 0.34d) + (noteScore * 0.30d) + (titleScore * 0.18d) + (topicScore * 0.18d);
+        double finalScore = context.broadQuery()
+            ? (structuredScore * 0.90d) + (semanticScore * 0.10d)
+            : (structuredScore * 0.72d) + (semanticScore * 0.28d);
+
+        if (titleScore >= 1.0d) {
+            structuredScore = Math.max(structuredScore, context.broadQuery() ? 0.72d : 0.78d);
+            finalScore = Math.max(finalScore, context.broadQuery() ? 0.74d : 0.82d);
+        }
+
+        structuredScore = Math.max(0.0d, structuredScore - conflictPenalty);
+        finalScore = Math.max(0.0d, finalScore - conflictPenalty);
+
+        return new SearchCandidate(
+            entry,
+            topicScore,
+            tagScore,
+            noteScore,
+            titleScore,
+            semanticScore,
+            conflictPenalty,
+            directTagMatches,
+            queryTopics,
+            tagTopics,
+            Math.min(1.0d, structuredScore),
+            Math.min(1.0d, finalScore)
+        );
+    }
+
+    private int countDirectTagMatches(
+        Entry entry,
+        String normalizedQuery,
+        Set<String> queryTokens,
+        Set<String> supportTerms,
+        boolean broadQuery
+    ) {
+        if (entry == null) {
+            return 0;
+        }
+        return Math.toIntExact(entry.getTags().stream()
+            .map(Tag::getName)
+            .filter(StringUtils::hasText)
+            .map(this::normalizeForSearch)
+            .filter(tagName -> tagName.contains(normalizedQuery)
+                || queryTokens.stream().anyMatch(token -> token.length() >= 4 && tagName.contains(token))
+                || (broadQuery && hasStrictTagSupport(supportTerms, tagName)))
+            .count());
+    }
+
+    private boolean shouldIncludeCandidate(
+        SearchCandidate candidate,
+        SearchQueryContext context,
+        boolean hasStrongStructuredMatches
+    ) {
+        if (context.broadQuery()) {
+            boolean broadSupport = hasBroadStructuredSupport(candidate);
+            if (hasStrongStructuredMatches) {
+                return broadSupport
+                    || (candidate.semanticScore() >= 0.97d && candidate.structuredScore() >= 0.24d);
+            }
+
+            return (candidate.finalScore() >= 0.30d && broadSupport)
+                || candidate.titleScore() >= 0.72d
+                || candidate.tagScore() >= 0.40d
+                || candidate.topicScore() >= 0.34d
+                || (candidate.semanticScore() >= 0.97d && candidate.structuredScore() >= 0.24d);
+        }
+
+        return candidate.finalScore() >= 0.16d
+            || candidate.titleScore() >= 1.0d
+            || candidate.structuredScore() >= 0.18d
+            || candidate.semanticScore() >= 0.58d;
+    }
+
+    private boolean hasBroadStructuredSupport(SearchCandidate candidate) {
+        return candidate.tagScore() >= 0.40d
+            || candidate.topicScore() >= 0.34d
+            || candidate.titleScore() >= 0.72d
+            || candidate.noteScore() >= 0.52d;
+    }
+
+    private List<SearchMatch> searchWithPgvector(
+        Long userId,
+        String query,
+        List<Entry> entries,
+        QueryEmbeddings queryEmbeddings,
+        boolean broadQuery
+    ) {
+        Set<String> supportTerms = buildQuerySupportTerms(query, broadQuery);
+        List<EntryVectorStoreService.NeighborMatch> contentCandidates = entryVectorStoreService.findNearestEntryMatches(
+            userId,
+            queryEmbeddings.content(),
+            broadQuery ? 24 : 40,
+            broadQuery ? 0.20d : 0.18d,
+            null,
+            EntryVectorStoreService.VectorKind.CONTENT
+        );
+        List<EntryVectorStoreService.NeighborMatch> focusCandidates = entryVectorStoreService.findNearestEntryMatches(
+            userId,
+            queryEmbeddings.focus(),
+            broadQuery ? 24 : 28,
+            broadQuery ? 0.18d : 0.16d,
+            null,
+            EntryVectorStoreService.VectorKind.FOCUS
+        );
+        if (contentCandidates.isEmpty() && focusCandidates.isEmpty()) {
+            return searchInMemory(entries, query, Optional.of(queryEmbeddings.content()), broadQuery);
         }
 
         Map<Long, Entry> entriesById = entries.stream()
@@ -740,19 +1020,33 @@ public class EntryService {
                 LinkedHashMap::new
             ));
         Map<Long, SearchMatch> matchesByEntryId = new LinkedHashMap<>();
+        Map<Long, double[]> semanticScoresByEntryId = new LinkedHashMap<>();
+        mergeSemanticCandidates(semanticScoresByEntryId, contentCandidates, false);
+        mergeSemanticCandidates(semanticScoresByEntryId, focusCandidates, true);
 
-        for (EntryVectorStoreService.NeighborMatch candidate : semanticCandidates) {
-            Entry entry = entriesById.get(candidate.entryId());
+        for (Map.Entry<Long, double[]> semanticCandidate : semanticScoresByEntryId.entrySet()) {
+            Entry entry = entriesById.get(semanticCandidate.getKey());
             if (entry == null) {
                 continue;
             }
             double lexicalScore = computeLexicalScore(query, entrySemanticIndexService.buildSearchDocument(entry), entry);
-            if (shouldRejectSemanticCandidate(entry, query, lexicalScore, candidate.similarity())) {
+            double supportScore = broadQuery ? computeHighValueSupportScore(entry, supportTerms) : 0.0d;
+            lexicalScore = Math.max(lexicalScore, supportScore);
+            double semanticScore = blendSemanticCandidateScores(
+                semanticCandidate.getValue()[0],
+                semanticCandidate.getValue()[1],
+                broadQuery
+            );
+            if (shouldRejectSemanticCandidate(entry, query, lexicalScore, semanticScore, broadQuery, supportTerms, supportScore)) {
                 continue;
             }
-            double hybridScore = blendSearchScores(lexicalScore, candidate.similarity(), query, entry);
-            SearchMatch match = new SearchMatch(entry, lexicalScore, candidate.similarity(), hybridScore);
-            if (match.shouldInclude(true)) {
+            double hybridScore = applySupportBoost(
+                blendSearchScores(lexicalScore, semanticScore, query, entry),
+                supportScore,
+                broadQuery
+            );
+            SearchMatch match = new SearchMatch(entry, lexicalScore, semanticScore, hybridScore, supportScore);
+            if (match.shouldInclude(true, broadQuery)) {
                 matchesByEntryId.put(entry.getId(), match);
             }
         }
@@ -763,6 +1057,8 @@ public class EntryService {
             }
 
             double lexicalScore = computeLexicalScore(query, entrySemanticIndexService.buildSearchDocument(entry), entry);
+            double supportScore = broadQuery ? computeHighValueSupportScore(entry, supportTerms) : 0.0d;
+            lexicalScore = Math.max(lexicalScore, supportScore);
             if (!isStrongLexicalCandidate(query, entry, lexicalScore)) {
                 continue;
             }
@@ -771,26 +1067,36 @@ public class EntryService {
                 entry,
                 lexicalScore,
                 0.0d,
-                blendSearchScores(lexicalScore, 0.0d, query, entry)
+                applySupportBoost(
+                    blendSearchScores(lexicalScore, 0.0d, query, entry),
+                    supportScore,
+                    broadQuery
+                ),
+                supportScore
             );
-            if (match.shouldInclude(false)) {
+            if (match.shouldInclude(false, broadQuery)) {
                 matchesByEntryId.put(entry.getId(), match);
             }
         }
 
-        return rankMatches(matchesByEntryId.values().stream().toList(), true);
+        return rankMatches(matchesByEntryId.values().stream().toList(), true, broadQuery);
     }
 
-    private List<SearchMatch> searchInMemory(List<Entry> entries, String query, Optional<double[]> queryEmbedding) {
+    private List<SearchMatch> searchInMemory(
+        List<Entry> entries,
+        String query,
+        Optional<double[]> queryEmbedding,
+        boolean broadQuery
+    ) {
         List<SearchMatch> matches = entries.stream()
-            .map(entry -> toSearchMatch(entry, query, queryEmbedding))
-            .filter(match -> match.shouldInclude(queryEmbedding.isPresent()))
+            .map(entry -> toSearchMatch(entry, query, queryEmbedding, broadQuery))
+            .filter(match -> match.shouldInclude(queryEmbedding.isPresent(), broadQuery))
             .toList();
 
-        return rankMatches(matches, queryEmbedding.isPresent());
+        return rankMatches(matches, queryEmbedding.isPresent(), broadQuery);
     }
 
-    private List<SearchMatch> rankMatches(List<SearchMatch> matches, boolean semanticEnabled) {
+    private List<SearchMatch> rankMatches(List<SearchMatch> matches, boolean semanticEnabled, boolean broadQuery) {
         if (matches.isEmpty()) {
             return List.of();
         }
@@ -804,14 +1110,33 @@ public class EntryService {
             .max()
             .orElse(0.0d);
         boolean hasStrongLexicalMatch = matches.stream().anyMatch(match -> match.lexicalScore() >= 0.18d);
+        boolean hasSupportedMatch = matches.stream().anyMatch(match -> match.supportScore() >= 0.16d);
         double relativeCutoff = semanticEnabled
-            ? Math.max(0.24d, bestHybridScore * 0.55d)
+            ? Math.max(broadQuery ? 0.34d : 0.24d, bestHybridScore * (broadQuery ? 0.72d : 0.55d))
             : 0.0d;
 
         return matches.stream()
             .filter(match -> {
                 if (!semanticEnabled) {
                     return true;
+                }
+
+                if (broadQuery) {
+                    if (hasSupportedMatch
+                        && match.supportScore() < 0.18d
+                        && match.lexicalScore() < 0.10d
+                        && match.semanticScore() < Math.max(0.86d, bestSemanticScore - 0.01d)) {
+                        return false;
+                    }
+
+                    if (hasStrongLexicalMatch) {
+                        return match.lexicalScore() >= 0.18d
+                            || match.semanticScore() >= Math.max(0.50d, bestSemanticScore - 0.05d)
+                            || match.hybridScore() >= relativeCutoff;
+                    }
+
+                    return match.semanticScore() >= Math.max(0.52d, bestSemanticScore - 0.04d)
+                        || match.hybridScore() >= relativeCutoff;
                 }
 
                 if (hasStrongLexicalMatch) {
@@ -830,7 +1155,7 @@ public class EntryService {
                     .thenComparing(SearchMatch::lexicalScore, Comparator.reverseOrder())
                     .thenComparing(SearchMatch::updatedAt, Comparator.reverseOrder())
             )
-            .limit(25)
+            .limit(broadQuery ? 12 : 25)
             .toList();
     }
 
@@ -853,6 +1178,41 @@ public class EntryService {
         return Math.min(1.0d, hybridScore);
     }
 
+    private void mergeSemanticCandidates(
+        Map<Long, double[]> semanticScoresByEntryId,
+        List<EntryVectorStoreService.NeighborMatch> candidates,
+        boolean focus
+    ) {
+        for (EntryVectorStoreService.NeighborMatch candidate : candidates) {
+            double[] scores = semanticScoresByEntryId.computeIfAbsent(candidate.entryId(), _id -> new double[2]);
+            if (focus) {
+                scores[1] = Math.max(scores[1], candidate.similarity());
+            } else {
+                scores[0] = Math.max(scores[0], candidate.similarity());
+            }
+        }
+    }
+
+    private double blendSemanticCandidateScores(double contentSimilarity, double focusSimilarity, boolean broadQuery) {
+        if (contentSimilarity <= 0.0d) {
+            return focusSimilarity;
+        }
+        if (focusSimilarity <= 0.0d) {
+            return contentSimilarity;
+        }
+        if (broadQuery) {
+            return Math.min(1.0d, (focusSimilarity * 0.65d) + (contentSimilarity * 0.35d));
+        }
+        return Math.min(1.0d, Math.max(contentSimilarity, (focusSimilarity * 0.55d) + (contentSimilarity * 0.45d)));
+    }
+
+    private double applySupportBoost(double hybridScore, double supportScore, boolean broadQuery) {
+        if (!broadQuery || supportScore <= 0.0d) {
+            return hybridScore;
+        }
+        return Math.min(1.0d, hybridScore + (supportScore * 0.22d));
+    }
+
     private boolean isStrongLexicalCandidate(String query, Entry entry, double lexicalScore) {
         if (lexicalScore >= 0.18d) {
             return true;
@@ -865,16 +1225,16 @@ public class EntryService {
             && normalizedTitle.contains(normalizedQuery);
     }
 
-    private boolean shouldRejectSemanticCandidate(Entry entry, String query, double lexicalScore, double semanticScore) {
-        if (entry == null || entry.getFlag() == null) {
-            return false;
-        }
-
-        if (entry.getFlag() != FlagEnum.TWITCH) {
-            return false;
-        }
-
-        if (lexicalScore >= 0.12d) {
+    private boolean shouldRejectSemanticCandidate(
+        Entry entry,
+        String query,
+        double lexicalScore,
+        double semanticScore,
+        boolean broadQuery,
+        Set<String> supportTerms,
+        double supportScore
+    ) {
+        if (entry == null) {
             return false;
         }
 
@@ -884,19 +1244,29 @@ public class EntryService {
         }
 
         String normalizedDocument = normalizeForSearch(entrySemanticIndexService.buildSearchDocument(entry));
-        boolean hasDirectSupport = normalizedDocument.contains(normalizedQuery)
-            || tokenize(normalizedQuery).stream().anyMatch(token -> token.length() >= 4 && normalizedDocument.contains(token));
+        boolean hasDirectSupport = hasTextualSupport(supportTerms, normalizedDocument);
 
-        if (hasDirectSupport) {
+        if (entry.getFlag() == FlagEnum.TWITCH && lexicalScore < 0.12d && supportScore < 0.16d && !hasDirectSupport && semanticScore < 0.68d) {
+            return true;
+        }
+
+        if (!broadQuery) {
             return false;
         }
 
-        return semanticScore < 0.68d;
+        if (lexicalScore >= 0.10d || supportScore >= 0.16d || hasHighValueLexicalSupport(entry, supportTerms)) {
+            return false;
+        }
+
+        return semanticScore < 0.64d;
     }
 
-    private SearchMatch toSearchMatch(Entry entry, String query, Optional<double[]> queryEmbedding) {
+    private SearchMatch toSearchMatch(Entry entry, String query, Optional<double[]> queryEmbedding, boolean broadQuery) {
+        Set<String> supportTerms = buildQuerySupportTerms(query, broadQuery);
         String searchDocument = entrySemanticIndexService.buildSearchDocument(entry);
         double lexicalScore = computeLexicalScore(query, searchDocument, entry);
+        double supportScore = broadQuery ? computeHighValueSupportScore(entry, supportTerms) : 0.0d;
+        lexicalScore = Math.max(lexicalScore, supportScore);
         double semanticScore = 0.0d;
 
         if (queryEmbedding.isPresent()) {
@@ -906,13 +1276,18 @@ public class EntryService {
             }
         }
 
-        if (queryEmbedding.isPresent() && shouldRejectSemanticCandidate(entry, query, lexicalScore, semanticScore)) {
+        if (queryEmbedding.isPresent()
+            && shouldRejectSemanticCandidate(entry, query, lexicalScore, semanticScore, broadQuery, supportTerms, supportScore)) {
             semanticScore = 0.0d;
         }
 
-        double hybridScore = blendSearchScores(lexicalScore, semanticScore, query, entry);
+        double hybridScore = applySupportBoost(
+            blendSearchScores(lexicalScore, semanticScore, query, entry),
+            supportScore,
+            broadQuery
+        );
 
-        return new SearchMatch(entry, lexicalScore, semanticScore, hybridScore);
+        return new SearchMatch(entry, lexicalScore, semanticScore, hybridScore, supportScore);
     }
 
     private double computeLexicalScore(String query, String searchDocument, Entry entry) {
@@ -924,13 +1299,232 @@ public class EntryService {
         String normalizedDocument = normalizeForSearch(searchDocument);
         String normalizedTitle = normalizeForSearch(entry.getTitle());
         Set<String> queryTokens = tokenize(normalizedQuery);
+        boolean broadQuery = isBroadSemanticQuery(query);
+        Set<String> supportTerms = buildQuerySupportTerms(query, broadQuery);
+        double tagScore = computeTagSupportScore(entry, normalizedQuery, queryTokens, supportTerms, broadQuery);
+        double noteScore = computeDocumentSupportScore(normalizedDocument, normalizedQuery, queryTokens, supportTerms, broadQuery);
+        double titleScore = computeTitleSupportScore(normalizedTitle, normalizedQuery, supportTerms, broadQuery);
+
+        return Math.min(1.0d, (tagScore * 0.50d) + (noteScore * 0.32d) + (titleScore * 0.18d));
+    }
+
+    private Set<String> tokenize(String value) {
+        return java.util.Arrays.stream(value.split("[^\\p{L}\\p{Nd}]+"))
+            .map(String::trim)
+            .filter(token -> token.length() >= 2)
+            .collect(Collectors.toSet());
+    }
+
+    private boolean isBroadSemanticQuery(String query) {
+        String normalizedQuery = normalizeForSearch(query);
+        Set<String> queryTokens = tokenize(normalizedQuery);
+        if (queryTokens.size() != 1) {
+            return false;
+        }
+        return queryTokens.iterator().next().length() >= 5;
+    }
+
+    private String buildSemanticQuery(String query, boolean broadQuery) {
+        Set<String> vectorTerms = buildVectorQueryTerms(query, broadQuery);
+        if (vectorTerms.isEmpty()) {
+            return query;
+        }
+        return String.join(" ", vectorTerms);
+    }
+
+    private Set<String> buildQuerySupportTerms(String query, boolean broadQuery) {
+        String normalizedQuery = normalizeForSearch(query);
+        LinkedHashMap<String, Boolean> terms = new LinkedHashMap<>();
+        tokenize(normalizedQuery).forEach(token -> terms.put(token, Boolean.TRUE));
+
+        if (broadQuery) {
+            for (String token : tokenize(normalizedQuery)) {
+                BROAD_QUERY_ALIASES.getOrDefault(token, List.of())
+                    .stream()
+                    .map(this::normalizeForSearch)
+                    .filter(StringUtils::hasText)
+                    .forEach(alias -> terms.put(alias, Boolean.TRUE));
+            }
+        }
+
+        List<String> seedTerms = new ArrayList<>(terms.keySet());
+        for (String seedTerm : seedTerms) {
+            expandLexicalFamily(seedTerm).forEach(familyTerm -> terms.put(familyTerm, Boolean.TRUE));
+        }
+
+        return terms.keySet();
+    }
+
+    private Set<String> buildVectorQueryTerms(String query, boolean broadQuery) {
+        String normalizedQuery = normalizeForSearch(query);
+        LinkedHashMap<String, Boolean> terms = new LinkedHashMap<>();
+        Set<String> queryTokens = tokenize(normalizedQuery);
+        queryTokens.forEach(token -> terms.put(token, Boolean.TRUE));
+
+        for (String token : queryTokens) {
+            String familyRoot = findLexicalFamilyRoot(token);
+            if (StringUtils.hasText(familyRoot)) {
+                terms.put(familyRoot, Boolean.TRUE);
+            }
+        }
+
+        Set<String> canonicalTopics = entrySemanticIndexService.extractCanonicalTopics(
+            broadQuery ? String.join(" ", buildQuerySupportTerms(query, true)) : normalizedQuery
+        );
+        for (String canonicalTopic : canonicalTopics) {
+            terms.put(canonicalTopic, Boolean.TRUE);
+            VECTOR_TOPIC_TERMS.getOrDefault(canonicalTopic, List.of()).stream()
+                .map(this::normalizeForSearch)
+                .filter(StringUtils::hasText)
+                .forEach(alias -> terms.put(alias, Boolean.TRUE));
+        }
+
+        return terms.keySet();
+    }
+
+    private Set<String> expandLexicalFamily(String token) {
+        if (!StringUtils.hasText(token)) {
+            return Set.of();
+        }
+
+        String normalizedToken = normalizeForSearch(token);
+        LinkedHashMap<String, Boolean> relatedTerms = new LinkedHashMap<>();
+        for (List<String> familyGroup : LEXICAL_FAMILY_GROUPS) {
+            boolean belongsToGroup = familyGroup.stream()
+                .map(this::normalizeForSearch)
+                .anyMatch(normalizedToken::equals);
+            if (!belongsToGroup) {
+                continue;
+            }
+
+            familyGroup.stream()
+                .map(this::normalizeForSearch)
+                .filter(StringUtils::hasText)
+                .forEach(term -> relatedTerms.put(term, Boolean.TRUE));
+        }
+
+        return relatedTerms.keySet();
+    }
+
+    private String findLexicalFamilyRoot(String token) {
+        if (!StringUtils.hasText(token)) {
+            return null;
+        }
+
+        String normalizedToken = normalizeForSearch(token);
+        for (List<String> familyGroup : LEXICAL_FAMILY_GROUPS) {
+            List<String> normalizedGroup = familyGroup.stream()
+                .map(this::normalizeForSearch)
+                .filter(StringUtils::hasText)
+                .toList();
+            if (!normalizedGroup.contains(normalizedToken) || normalizedGroup.isEmpty()) {
+                continue;
+            }
+            return normalizedGroup.get(0);
+        }
+
+        return normalizedToken;
+    }
+
+    private boolean hasTextualSupport(String normalizedQuery, String normalizedText) {
+        if (!StringUtils.hasText(normalizedQuery) || !StringUtils.hasText(normalizedText)) {
+            return false;
+        }
+
+        return normalizedText.contains(normalizedQuery)
+            || tokenize(normalizedQuery).stream().anyMatch(token -> token.length() >= 4 && normalizedText.contains(token));
+    }
+
+    private boolean hasTextualSupport(Set<String> normalizedTerms, String normalizedText) {
+        if (normalizedTerms == null || normalizedTerms.isEmpty() || !StringUtils.hasText(normalizedText)) {
+            return false;
+        }
+
+        return normalizedTerms.stream()
+            .filter(StringUtils::hasText)
+            .anyMatch(term -> normalizedText.contains(term));
+    }
+
+    private boolean hasHighValueLexicalSupport(Entry entry, Set<String> supportTerms) {
+        return computeHighValueSupportScore(entry, supportTerms) >= 0.16d;
+    }
+
+    private double computeHighValueSupportScore(Entry entry, Set<String> supportTerms) {
+        if (entry == null || supportTerms == null || supportTerms.isEmpty()) {
+            return 0.0d;
+        }
+
+        String normalizedQuery = String.join(" ", supportTerms);
+        String normalizedTitle = normalizeForSearch(entry.getTitle());
+        String normalizedDocument = normalizeForSearch(entrySemanticIndexService.buildSearchDocument(entry));
+        Set<String> queryTokens = tokenize(normalizedQuery);
+
+        double canonicalScore = computeCanonicalTopicScore(entry, supportTerms);
+        double tagScore = computeTagSupportScore(entry, normalizedQuery, queryTokens, supportTerms, true);
+        double noteScore = computeDocumentSupportScore(normalizedDocument, normalizedQuery, queryTokens, supportTerms, true);
+        double titleScore = computeTitleSupportScore(normalizedTitle, normalizedQuery, supportTerms, true);
+
+        return Math.min(
+            1.0d,
+            Math.max(canonicalScore, (tagScore * 0.52d) + (noteScore * 0.30d) + (titleScore * 0.18d))
+        );
+    }
+
+    private double computeTagSupportScore(
+        Entry entry,
+        String normalizedQuery,
+        Set<String> queryTokens,
+        Set<String> supportTerms,
+        boolean broadQuery
+    ) {
+        if (entry == null) {
+            return 0.0d;
+        }
+
+        List<String> normalizedTags = entry.getTags().stream()
+            .map(Tag::getName)
+            .filter(StringUtils::hasText)
+            .map(this::normalizeForSearch)
+            .toList();
+        if (normalizedTags.isEmpty()) {
+            return 0.0d;
+        }
+
+        long directMatches = normalizedTags.stream()
+            .filter(tagName -> tagName.contains(normalizedQuery)
+                || queryTokens.stream().anyMatch(token -> token.length() >= 4 && tagName.contains(token))
+                || (broadQuery && hasStrictTagSupport(supportTerms, tagName)))
+            .count();
 
         double score = 0.0d;
-        if (StringUtils.hasText(normalizedTitle) && normalizedTitle.contains(normalizedQuery)) {
-            score += 0.55d;
+        if (directMatches > 0) {
+            score = Math.max(score, Math.min(1.0d, 0.68d + ((double) directMatches - 1.0d) * 0.12d));
         }
+
+        Set<String> queryTopics = entrySemanticIndexService.extractCanonicalTopics(String.join(" ", supportTerms));
+        Set<String> tagTopics = entrySemanticIndexService.extractCanonicalTopics(String.join(" ", normalizedTags));
+        long topicOverlap = queryTopics.stream().filter(tagTopics::contains).count();
+        if (topicOverlap > 0) {
+            score = Math.max(score, Math.min(1.0d, 0.74d + ((double) topicOverlap - 1.0d) * 0.10d));
+        }
+
+        return Math.min(1.0d, score);
+    }
+
+    private double computeDocumentSupportScore(
+        String normalizedDocument,
+        String normalizedQuery,
+        Set<String> queryTokens,
+        Set<String> supportTerms,
+        boolean broadQuery
+    ) {
+        if (!StringUtils.hasText(normalizedDocument) || !StringUtils.hasText(normalizedQuery)) {
+            return 0.0d;
+        }
+
+        double score = 0.0d;
         if (normalizedDocument.contains(normalizedQuery)) {
-            score += 0.25d;
+            score += 0.52d;
         }
 
         long matchedTokens = queryTokens.stream()
@@ -940,24 +1534,130 @@ public class EntryService {
             score += Math.min(0.20d, (double) matchedTokens / (double) queryTokens.size() * 0.20d);
         }
 
-        long tagMatches = entry.getTags().stream()
-            .map(Tag::getName)
-            .filter(StringUtils::hasText)
-            .map(this::normalizeForSearch)
-            .filter(tagName -> tagName.contains(normalizedQuery) || queryTokens.stream().anyMatch(tagName::contains))
-            .count();
-        if (tagMatches > 0) {
-            score += Math.min(0.20d, 0.08d * tagMatches);
+        if (broadQuery) {
+            long matchedSupportTerms = supportTerms.stream()
+                .filter(StringUtils::hasText)
+                .filter(term -> term.length() >= 4)
+                .filter(normalizedDocument::contains)
+                .count();
+            if (matchedSupportTerms > 0) {
+                score += Math.min(0.28d, matchedSupportTerms * 0.06d);
+            }
         }
 
         return Math.min(1.0d, score);
     }
 
-    private Set<String> tokenize(String value) {
-        return java.util.Arrays.stream(value.split("[^\\p{L}\\p{Nd}]+"))
-            .map(String::trim)
-            .filter(token -> token.length() >= 2)
-            .collect(Collectors.toSet());
+    private double computeTitleSupportScore(
+        String normalizedTitle,
+        String normalizedQuery,
+        Set<String> supportTerms,
+        boolean broadQuery
+    ) {
+        if (!StringUtils.hasText(normalizedTitle) || !StringUtils.hasText(normalizedQuery)) {
+            return 0.0d;
+        }
+
+        if (normalizedTitle.contains(normalizedQuery)) {
+            return 1.0d;
+        }
+        if (broadQuery && hasTextualSupport(supportTerms, normalizedTitle)) {
+            return 0.72d;
+        }
+        return 0.0d;
+    }
+
+    private double computeCanonicalTopicScore(Entry entry, Set<String> supportTerms) {
+        Set<String> queryTopics = entrySemanticIndexService.extractCanonicalTopics(String.join(" ", supportTerms));
+        return computeCanonicalTopicScore(entry, queryTopics, true);
+    }
+
+    private double computeCanonicalTopicScore(Entry entry, Set<String> queryTopics, boolean alreadyCanonical) {
+        if (queryTopics.isEmpty()) {
+            return 0.0d;
+        }
+
+        Set<String> entryTopics = entrySemanticIndexService.extractCanonicalTopics(entry);
+        if (entryTopics.isEmpty()) {
+            return 0.0d;
+        }
+
+        long overlap = queryTopics.stream()
+            .filter(entryTopics::contains)
+            .count();
+        if (overlap <= 0) {
+            return 0.0d;
+        }
+
+        return Math.min(0.48d, 0.28d + ((double) overlap - 1.0d) * 0.08d);
+    }
+
+    private boolean hasStrictTagSupport(Set<String> supportTerms, String normalizedTag) {
+        if (supportTerms == null || supportTerms.isEmpty() || !StringUtils.hasText(normalizedTag)) {
+            return false;
+        }
+
+        Set<String> tagTokens = tokenize(normalizedTag);
+        return supportTerms.stream()
+            .filter(StringUtils::hasText)
+            .filter(term -> term.length() >= 4)
+            .anyMatch(term -> tagTokens.contains(term) || normalizedTag.equals(term));
+    }
+
+    private double computeConflictPenalty(Entry entry, Set<String> queryTopics, boolean broadQuery) {
+        if (!broadQuery || entry == null || queryTopics == null || queryTopics.isEmpty()) {
+            return 0.0d;
+        }
+
+        double entryPenalty = computeDomainConflictPenalty(entrySemanticIndexService.extractCanonicalTopics(entry), queryTopics, broadQuery);
+        Set<String> tagTopics = entrySemanticIndexService.extractCanonicalTopics(
+            entry.getTags().stream()
+                .map(Tag::getName)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining(" "))
+        );
+        double tagPenalty = computeDomainConflictPenalty(tagTopics, queryTopics, broadQuery);
+        return Math.min(0.62d, entryPenalty + (tagPenalty * 0.85d));
+    }
+
+    private double computeDomainConflictPenalty(Set<String> entryTopics, Set<String> queryTopics, boolean broadQuery) {
+        if (!broadQuery || entryTopics == null || queryTopics == null || queryTopics.isEmpty()) {
+            return 0.0d;
+        }
+        if (entryTopics.isEmpty() || queryTopics.stream().anyMatch(entryTopics::contains)) {
+            return 0.0d;
+        }
+
+        Set<String> queryRoots = canonicalDomainRoots(queryTopics);
+        Set<String> entryRoots = canonicalDomainRoots(entryTopics);
+        if (queryRoots.isEmpty() || entryRoots.isEmpty() || queryRoots.stream().anyMatch(entryRoots::contains)) {
+            return 0.0d;
+        }
+
+        return 0.34d;
+    }
+
+    private Set<String> canonicalDomainRoots(Set<String> topics) {
+        if (topics == null || topics.isEmpty()) {
+            return Set.of();
+        }
+
+        LinkedHashMap<String, Boolean> roots = new LinkedHashMap<>();
+        for (String topic : topics) {
+            if (!StringUtils.hasText(topic)) {
+                continue;
+            }
+
+            switch (topic) {
+                case "technology", "web", "frontend", "backend" -> roots.put("technology", Boolean.TRUE);
+                case "food", "vegetable", "fruit" -> roots.put("food", Boolean.TRUE);
+                case "travel" -> roots.put("travel", Boolean.TRUE);
+                case "music" -> roots.put("music", Boolean.TRUE);
+                default -> {
+                }
+            }
+        }
+        return roots.keySet();
     }
 
     private String normalizeForSearch(String value) {
@@ -989,9 +1689,12 @@ public class EntryService {
         return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
     }
 
-    private record SearchMatch(Entry entry, double lexicalScore, double semanticScore, double hybridScore) {
-        private boolean shouldInclude(boolean semanticEnabled) {
+    private record SearchMatch(Entry entry, double lexicalScore, double semanticScore, double hybridScore, double supportScore) {
+        private boolean shouldInclude(boolean semanticEnabled, boolean broadQuery) {
             if (semanticEnabled) {
+                if (broadQuery) {
+                    return hybridScore >= 0.34d || lexicalScore >= 0.18d || semanticScore >= 0.50d;
+                }
                 return hybridScore >= 0.28d || lexicalScore >= 0.12d || semanticScore >= 0.38d;
             }
             return lexicalScore > 0.0d;
@@ -1000,6 +1703,35 @@ public class EntryService {
         private java.time.Instant updatedAt() {
             return entry.getUpdateDate();
         }
+    }
+
+    private record SearchQueryContext(
+        String rawQuery,
+        String normalizedQuery,
+        Set<String> queryTokens,
+        Set<String> supportTerms,
+        Set<String> canonicalTopics,
+        boolean broadQuery
+    ) {
+    }
+
+    private record SearchCandidate(
+        Entry entry,
+        double topicScore,
+        double tagScore,
+        double noteScore,
+        double titleScore,
+        double semanticScore,
+        double conflictPenalty,
+        int directTagMatches,
+        Set<String> queryTopics,
+        Set<String> tagTopics,
+        double structuredScore,
+        double finalScore
+    ) {
+    }
+
+    private record QueryEmbeddings(double[] content, double[] focus) {
     }
 
     private void refreshProcessedData(Entry entry) {

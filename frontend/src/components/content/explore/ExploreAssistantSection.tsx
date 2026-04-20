@@ -682,13 +682,6 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
         ) : null}
 
         <div className="mt-4 grid gap-3">
-          <div className="rounded-card border border-slate-200 bg-slate-50/70 p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Chat libre</p>
-            <p className="mt-1 text-sm text-slate-700">
-              Puedes preguntar lo que quieras aunque no aparezca en las chips.
-            </p>
-          </div>
-
           <div className="relative">
             <textarea
               ref={questionInputRef}

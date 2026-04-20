@@ -50,7 +50,13 @@ export function useStorageEntries({
         fetchEntryRelationships(),
       ]);
 
-      setStorageEntries(dedupeEntries(entriesData));
+      const latestEntries = dedupeEntries(entriesData);
+      setStorageEntries(latestEntries);
+      setStorageSearchResults((current) =>
+        current === null
+          ? null
+          : current.filter((entry) => latestEntries.some((latestEntry) => latestEntry.id === entry.id))
+      );
       setManualRelationships(relationshipsData ?? []);
     } catch (requestError) {
       if (isApiError(requestError) && requestError.status === 401) {
@@ -94,6 +100,25 @@ export function useStorageEntries({
         setStorageSearchError(null);
         const results = await searchEntries(query);
         if (!cancelled) {
+          console.groupCollapsed(`[semantic-search] ${query}`);
+          console.table(
+            results.map((entry) => ({
+              id: entry.id,
+              title: entry.title,
+              final: entry.searchDebug?.finalScore ?? null,
+              structured: entry.searchDebug?.structuredScore ?? null,
+              semantic: entry.searchDebug?.semanticScore ?? null,
+              tags: entry.searchDebug?.tagScore ?? null,
+              directTagMatches: entry.searchDebug?.directTagMatches ?? null,
+              note: entry.searchDebug?.noteScore ?? null,
+              titleScore: entry.searchDebug?.titleScore ?? null,
+              topic: entry.searchDebug?.topicScore ?? null,
+              penalty: entry.searchDebug?.conflictPenalty ?? null,
+              queryTopics: entry.searchDebug?.queryTopics?.join(", ") ?? null,
+              tagTopics: entry.searchDebug?.tagTopics?.join(", ") ?? null,
+            }))
+          );
+          console.groupEnd();
           setStorageSearchResults(dedupeEntries(results));
         }
       } catch (requestError) {

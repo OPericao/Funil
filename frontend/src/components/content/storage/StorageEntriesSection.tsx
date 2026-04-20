@@ -24,6 +24,7 @@ import {
   ListBulletIcon,
   MusicalNoteIcon,
   PencilSquareIcon,
+  SuccessCheckCircleIcon,
   TableIcon,
   TextComponentIcon,
   TrashIcon,
@@ -35,6 +36,7 @@ import { CreateFolderModal } from "./CreateFolderModal";
 import { Portal } from "../../ui/Portal";
 import { HeroVideoDialog } from "../../ui/HeroVideoDialog";
 import { getRelatedEntryIds } from "../../../utils/relationshipGraph";
+import { EntryDetailContent } from "./EntryDetailContent";
 
 type StorageEntriesSectionProps = {
   entries: EntryItem[];
@@ -69,6 +71,10 @@ function isChecklistResource(resource: EntryItem["resources"][number]) {
   }
   const title = (resource.title ?? "").trim().toLowerCase();
   return CHECKLIST_TITLES.has(title);
+}
+
+function shouldOpenTextEditorByDefault(entry: EntryItem | null) {
+  return entry?.flag === "CHECKLIST" || entry?.flag === "ENUMERATION";
 }
 
 function buildEntrySearchableText(entry: EntryItem) {
@@ -330,12 +336,29 @@ function serializeChecklistDraft(items: ChecklistDraftItem[]): string {
     .join("\n");
 }
 
+function splitEnumerationSegments(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const explicitListItem = trimmed.match(/^([-*]\s+|\d+[.)]\s+)(.+)$/);
+  if (explicitListItem) {
+    const content = explicitListItem[2].trim();
+    return content ? [content] : [];
+  }
+
+  return trimmed
+    .split(/\s*(?:[,;|]|\s·\s)\s*/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
 function parseEnumerationDraft(text: string): EnumerationDraftItem[] {
   return text
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => ({ text: line.replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, "").trim() }))
+    .flatMap((line) => splitEnumerationSegments(line))
+    .map((itemText) => ({ text: itemText }))
     .filter((item) => item.text.length > 0);
 }
 
@@ -967,49 +990,41 @@ export function StorageEntriesSection({
     return new Map(entries.map((entry) => [entry.id, entry]));
   }, [entries]);
 
-  const { leftRelatedEntry, rightRelatedEntry } = useMemo(() => {
-  if (!selectedEntry) {
-    return { leftRelatedEntry: null, rightRelatedEntry: null };
-  }
-
-  const candidates = relatedEntries.filter((entry) => entry.id !== selectedEntry.id);
-  const usedIds = new Set<number>();
-
-  let left: EntryItem | null = null;
-  const forcedLeft = forcedLeftEntryId !== null ? entriesById.get(forcedLeftEntryId) ?? null : null;
-  if (
-    forcedLeft &&
-    forcedLeft.id !== selectedEntry.id &&
-    candidates.some((entry) => entry.id === forcedLeft.id)
-  ) {
-    left = forcedLeft;
-    usedIds.add(forcedLeft.id);
-  } else {
-    left = candidates.find((entry) => !usedIds.has(entry.id)) ?? null;
-    if (left) {
-      usedIds.add(left.id);
+  const { leftRelatedEntries, rightRelatedEntries } = useMemo(() => {
+    if (!selectedEntry) {
+      return { leftRelatedEntries: [] as EntryItem[], rightRelatedEntries: [] as EntryItem[] };
     }
-  }
 
-  let right: EntryItem | null = null;
-  const forcedRight = forcedRightEntryId !== null ? entriesById.get(forcedRightEntryId) ?? null : null;
-  if (
-    forcedRight &&
-    forcedRight.id !== selectedEntry.id &&
-    !usedIds.has(forcedRight.id) &&
-    candidates.some((entry) => entry.id === forcedRight.id)
-  ) {
-    right = forcedRight;
-    usedIds.add(forcedRight.id);
-  } else {
-    right = candidates.find((entry) => !usedIds.has(entry.id)) ?? null;
-    if (right) {
-      usedIds.add(right.id);
+    const candidates = relatedEntries.filter((entry) => entry.id !== selectedEntry.id);
+    const ordered: EntryItem[] = [];
+    const usedIds = new Set<number>();
+
+    const pushCandidate = (candidate: EntryItem | null) => {
+      if (!candidate || usedIds.has(candidate.id)) {
+        return;
+      }
+      if (!candidates.some((entry) => entry.id === candidate.id)) {
+        return;
+      }
+      ordered.push(candidate);
+      usedIds.add(candidate.id);
+    };
+
+    pushCandidate(forcedLeftEntryId !== null ? entriesById.get(forcedLeftEntryId) ?? null : null);
+    pushCandidate(forcedRightEntryId !== null ? entriesById.get(forcedRightEntryId) ?? null : null);
+
+    for (const candidate of candidates) {
+      pushCandidate(candidate);
     }
-  }
 
-  return { leftRelatedEntry: left, rightRelatedEntry: right };
-}, [entriesById, forcedLeftEntryId, forcedRightEntryId, relatedEntries, selectedEntry]);
+    const visible = ordered.slice(0, 6);
+    const midpoint = Math.ceil(visible.length / 2);
+
+    return {
+      leftRelatedEntries: visible.slice(0, midpoint),
+      rightRelatedEntries: visible.slice(midpoint)
+    };
+  }, [entriesById, forcedLeftEntryId, forcedRightEntryId, relatedEntries, selectedEntry]);
 
   const selectedFolderEntries = useMemo(() => {
     if (!selectedFolder) {
@@ -1149,7 +1164,7 @@ export function StorageEntriesSection({
       return;
     }
 
-    setEditingField(null);
+    setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
     setTitleDraft(selectedEntry.title);
     const baseText = selectedEditableTextResource?.textContent ?? "";
     setTextDraft(baseText);
@@ -1407,7 +1422,7 @@ export function StorageEntriesSection({
     setChecklistDraft(parseChecklistDraft(baseText));
     setEnumerationDraft(parseEnumerationDraft(baseText));
     setTableDraft(parseEditableCsvTable(baseText));
-    setEditingField(null);
+    setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
     setDetailSaveError(null);
   }
 
@@ -1467,7 +1482,7 @@ export function StorageEntriesSection({
       await updateEntryTitle(selectedEntry.id, nextTitle);
       await onEntriesUpdated();
 
-      setEditingField(null);
+      setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
       setDetailSaveSuccess(t("storage.detailSaved"));
     } catch (requestError) {
       if (isApiError(requestError) && requestError.status === 401) {
@@ -1521,7 +1536,7 @@ export function StorageEntriesSection({
 
       await onEntriesUpdated();
 
-      setEditingField(null);
+      setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
       setDetailSaveSuccess(t("storage.detailSaved"));
     } catch (requestError) {
       if (isApiError(requestError) && requestError.status === 401) {
@@ -1582,6 +1597,62 @@ export function StorageEntriesSection({
       ? "scale-[0.99] opacity-100"
       : "scale-[0.96] opacity-80"
     : "scale-[0.985] opacity-95";
+
+  function renderRelatedStack(entriesToRender: EntryItem[], side: "left" | "right", scaleClass: string, title: string) {
+    return (
+      <div
+        className={`hidden w-[240px] shrink-0 flex-col gap-3 transform-gpu transition-all duration-300 ease-out lg:flex ${scaleClass} ${
+          entriesToRender.length === 0 ? "opacity-60" : ""
+        }`}
+      >
+        <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-ink-500">{title}</p>
+        {entriesToRender.length === 0 ? (
+          <div className="rounded-[24px] border border-white/45 bg-white/35 px-4 py-4 text-xs text-ink-600 shadow-[0_10px_26px_rgba(15,23,42,0.06)] backdrop-blur-[18px]">
+            {t("storage.noRelatedEntries")}
+          </div>
+        ) : (
+          entriesToRender.map((entry, index) => (
+            <button
+              key={`${side}-related-${entry.id}`}
+              type="button"
+              className={`w-full rounded-[26px] border border-slate-200/60 p-3 text-left shadow-[0_14px_36px_rgba(15,23,42,0.10),inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-1px_0_rgba(255,255,255,0.08),inset_0_0_8px_3px_rgba(255,255,255,0.18)] backdrop-blur-[20px] transition-all duration-200 ${
+                index === 0
+                  ? "bg-[linear-gradient(180deg,rgba(247,248,250,0.82)_0%,rgba(232,236,241,0.62)_100%)] hover:-translate-y-0.5 hover:shadow-lg"
+                  : "bg-[linear-gradient(180deg,rgba(249,250,252,0.72)_0%,rgba(235,239,244,0.52)_100%)] hover:-translate-y-0.5 hover:shadow-md"
+              }`}
+              onClick={() => openRelatedEntry(entry, side)}
+              aria-label={t("storage.openRelatedAria", { title: entry.title })}
+              disabled={carouselSliding}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="break-words text-sm font-bold text-ink-900">{entry.title}</h4>
+                  <p className="mt-2 break-words text-xs text-ink-700 overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
+                    {buildEntryText(entry, t("entries.noContent"))}
+                  </p>
+                </div>
+                <span className="inline-flex shrink-0 rounded-full border border-white/70 bg-white/65 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-600">
+                  {entry.processingCategory || (entry.flag && entry.flag !== "RAW" ? entry.flag.toLowerCase() : "nota")}
+                </span>
+              </div>
+              {entry.tags.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {entry.tags.slice(0, 3).map((tag) => (
+                    <span
+                      key={`${entry.id}-related-tag-${tag.id}`}
+                      className="inline-flex rounded-full border border-white/75 bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-ink-700"
+                    >
+                      #{tag.name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </button>
+          ))
+        )}
+      </div>
+    );
+  }
 
   const showingEntries = foldersViewActive && selectedFolder ? selectedFolderEntries : filteredEntries;
   const displayCards = useMemo<EntryDisplayCard[]>(() => {
@@ -1657,7 +1728,7 @@ export function StorageEntriesSection({
   return (
     <>
       <section className="flex h-full flex-col gap-4 px-4 py-4 sm:px-6">
-        <section className="glass-card shadow-card shrink-0">
+        <section className="glass-card shadow-card shrink-0 border-white/90 bg-[linear-gradient(180deg,rgba(255,247,239,0.95)_0%,rgba(229,243,255,0.9)_100%)] shadow-[0_24px_52px_rgba(15,23,42,0.11)]">
         <div className="grid gap-3 px-4 py-4 md:px-5">
           <h2 className="heading-title text-center text-ink-900">
             {foldersViewActive && selectedFolder ? selectedFolder.title : t("section.storage")}
@@ -1704,7 +1775,7 @@ export function StorageEntriesSection({
           <div className="mt-1 flex justify-end">
             <button
               type="button"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-control border border-[#F0F0F0] bg-white/25 px-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-50"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-control border border-white/80 bg-[#FFF9F0]/92 px-3 text-sm font-semibold text-brand-800 shadow-[0_14px_32px_rgba(15,23,42,0.08)] transition hover:border-brand-200 hover:bg-[#FFF4E6]"
               aria-label={t("storage.createFolderAria")}
               onClick={openCreateFolderModal}
               disabled={creatingFolder}
@@ -1715,17 +1786,17 @@ export function StorageEntriesSection({
           </div>
 
           {foldersError ? (
-            <section className="rounded-card border border-brand-200 bg-white/25 p-4 shadow-card md:p-5 mt-5">
+            <section className="mt-5 rounded-card border border-white/80 bg-[#FFF9F0]/92 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] md:p-5">
               <p className="text-sm font-medium text-ink-600">{foldersError}</p>
             </section>
           ) : null}
 
           {foldersLoading ? (
-            <section className="rounded-card border border-brand-200 bg-white/25 p-4 shadow-card md:p-5 mt-5">
+            <section className="mt-5 rounded-card border border-white/80 bg-[#FFF9F0]/92 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] md:p-5">
               <p className="text-sm font-medium text-ink-600">{t("storage.loading")}</p>
             </section>
           ) : filteredFolders.length === 0 ? (
-            <section className="rounded-card border border-brand-200 bg-white/25 p-4 shadow-card md:p-5 mt-5">
+            <section className="mt-5 rounded-card border border-white/80 bg-[#FFF9F0]/92 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] md:p-5">
               <p className="text-sm font-medium text-ink-600">{t("storage.noFolders")}</p>
             </section>
           ) : (
@@ -1737,13 +1808,13 @@ export function StorageEntriesSection({
                 <button
                   key={`folder-${folder.id}`}
                   type="button"
-                  className="col-span-1 grid min-w-0 gap-3 rounded-card border border-[#F0F0F0] bg-white/25 p-4 text-left shadow-card transition hover:bg-brand-50"
+                  className="col-span-1 grid min-w-0 gap-3 rounded-[28px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,240,0.96)_0%,rgba(255,243,229,0.92)_100%)] p-4 text-left shadow-[0_22px_44px_rgba(15,23,42,0.10)] transition hover:-translate-y-0.5 hover:border-brand-200 hover:bg-[linear-gradient(180deg,rgba(255,246,235,0.98)_0%,rgba(255,238,216,0.95)_100%)]"
                   onClick={() => openFolder(folder)}
                   aria-label={folder.title}
                 >
-                  <h3 className="break-words text-base font-semibold leading-snug text-ink-900">{folder.title}</h3>
-                  <div className="flex min-h-20 items-center justify-center rounded-control border border-[#F0F0F0] bg-brand-50">
-                    <StorageTabIcon className="h-9 w-9 text-brand-600" scale={0.36} />
+                  <h3 className="break-words text-base font-semibold leading-snug text-ink-950">{folder.title}</h3>
+                  <div className="flex min-h-20 items-center justify-center rounded-[22px] border border-[#EADFCF] bg-[linear-gradient(180deg,#FFFDF8_0%,#FFF5E8_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+                    <StorageTabIcon className="h-10 w-10 text-brand-700" scale={0.38} />
                   </div>
                 </button>
               ))}
@@ -1751,23 +1822,23 @@ export function StorageEntriesSection({
           )}
         </>
       ) : foldersViewActive && selectedFolder && folderEntriesLoading ? (
-        <section className="rounded-card border border-brand-200 bg-white/25 p-4 shadow-card md:p-5">
+        <section className="rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,242,0.92)_0%,rgba(235,244,252,0.84)_100%)] p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] md:p-5">
           <p className="text-sm font-medium text-ink-600">{t("storage.loading")}</p>
         </section>
       ) : foldersViewActive && selectedFolder && folderEntriesError ? (
-        <section className="rounded-card border border-brand-200 bg-white/25 p-4 shadow-card md:p-5">
+        <section className="rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,242,0.92)_0%,rgba(235,244,252,0.84)_100%)] p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] md:p-5">
           <p className="text-sm font-medium text-ink-600">{folderEntriesError}</p>
         </section>
       ) : loading ? (
-        <section className="rounded-card border border-brand-200 bg-white/25 p-4 shadow-card md:p-5">
+        <section className="rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,242,0.92)_0%,rgba(235,244,252,0.84)_100%)] p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] md:p-5">
           <p className="text-sm font-medium text-ink-600">{t("storage.loading")}</p>
         </section>
       ) : error ? (
-        <section className="rounded-card border border-brand-200 bg-white/25 p-4 shadow-card md:p-5">
+        <section className="rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,242,0.92)_0%,rgba(235,244,252,0.84)_100%)] p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] md:p-5">
           <p className={errorTextClass}>{t("common.errorPrefix", { message: error })}</p>
         </section>
       ) : displayCards.length === 0 ? (
-        <section className="rounded-card border border-brand-200 bg-white/25 p-4 shadow-card md:p-5">
+        <section className="rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,242,0.92)_0%,rgba(235,244,252,0.84)_100%)] p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] md:p-5">
           <p className="text-sm font-medium text-ink-600">
             {searchValue.trim() ? t("storage.emptyFiltered") : t("storage.empty")}
           </p>
@@ -1789,10 +1860,10 @@ export function StorageEntriesSection({
               return (
                 <article
                   key={card.key}
-                  className={`relative mb-3 inline-block w-full break-inside-avoid rounded-card border bg-white/25 p-4 text-left shadow-card transition ${
+                  className={`relative mb-3 inline-block w-full break-inside-avoid rounded-card border bg-[linear-gradient(180deg,rgba(255,250,244,0.9)_0%,rgba(235,244,252,0.82)_100%)] p-4 text-left shadow-[0_18px_38px_rgba(15,23,42,0.08)] transition ${
                     selected
                       ? "border-brand-500 ring-2 ring-brand-100"
-                      : "border-[#F0F0F0] hover:bg-brand-50"
+                      : "border-white/80 hover:bg-[linear-gradient(180deg,rgba(255,247,239,0.96)_0%,rgba(227,242,255,0.88)_100%)]"
                   }`}
                   onClick={() => {
                     setForcedLeftEntryId(null);
@@ -1991,46 +2062,12 @@ export function StorageEntriesSection({
             <div
               className={`mx-auto flex w-full max-w-[1120px] items-center justify-center gap-3 transform-gpu transition-transform duration-300 ease-out ${carouselTranslateClass}`}
             >
-            <button
-              type="button"
-              className={`hidden w-[220px] shrink-0 rounded-[20px] border border-white/30 p-3 text-left shadow-[0_8px_32px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.5),inset_0_-1px_0_rgba(255,255,255,0.1),inset_0_0_6px_3px_rgba(255,255,255,0.3)] backdrop-blur-[20px] transform-gpu transition-all duration-300 ease-out lg:block ${leftCardScaleClass} ${
-                leftRelatedEntry
-                  ? "hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.99]"
-                  : "cursor-default border-white/20 opacity-70"
-              }`}
-              style={{ background: 'rgb(170, 170, 170)' }}
-              onClick={() => {
-                if (leftRelatedEntry) {
-                  openRelatedEntry(leftRelatedEntry, "left");
-                }
-              }}
-              aria-label={leftRelatedEntry ? t("storage.openRelatedAria", { title: leftRelatedEntry.title }) : t("storage.noRelatedEntries")}
-              disabled={!leftRelatedEntry || carouselSliding}
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">{t("storage.relatedLeft")}</p>
-              {leftRelatedEntry ? (
-                <>
-                  <h4 className="mt-1 break-words text-sm font-bold text-ink-900">{leftRelatedEntry.title}</h4>
-                  <p className="mt-2 break-words text-xs text-ink-700 overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
-                    {buildEntryText(leftRelatedEntry, t("entries.noContent"))}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-1 text-xs text-ink-600">{t("storage.noRelatedEntries")}</p>
-              )}
-            </button>
+            {renderRelatedStack(leftRelatedEntries, "left", leftCardScaleClass, t("storage.relatedLeft"))}
 
             <section
-              className={`w-full max-w-[calc(100vw-2rem)] shrink-0 p-4 transform-gpu transition-all duration-300 ease-out md:max-w-[560px] md:p-5 ${centerCardScaleClass}`}
-              style={{ 
-                background: 'rgba(255, 255, 255, 0.77)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                borderRadius: '16px',
-                border: '1px solid rgba(255, 255, 255, 0.3)'
-              }}
+              className={`flex max-h-[calc(100vh-2rem)] w-full max-w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden rounded-[30px] border border-white/85 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.36),transparent_24%),radial-gradient(circle_at_top_right,rgba(219,234,254,0.24),transparent_34%),linear-gradient(180deg,rgba(255,249,243,0.94)_0%,rgba(238,244,250,0.88)_100%)] p-4 shadow-[0_28px_68px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.84)] backdrop-blur-[20px] transform-gpu transition-all duration-300 ease-out md:max-w-[560px] md:p-5 ${centerCardScaleClass}`}
             >
-              <div className="mb-4 flex items-center justify-between gap-2">
+              <div className="mb-4 flex shrink-0 items-center justify-between gap-2">
               <h3 className="text-lg font-extrabold tracking-tight text-ink-900">
                 {t("storage.detailTitle")}
               </h3>
@@ -2047,7 +2084,7 @@ export function StorageEntriesSection({
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-rose-300 bg-white/25 text-rose-700 transition hover:bg-rose-50"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/80 bg-[linear-gradient(180deg,rgba(255,247,242,0.92)_0%,rgba(255,233,236,0.84)_100%)] text-rose-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-rose-300 hover:bg-rose-50"
                   aria-label={t("storage.closeDetailAria")}
                   onClick={() => {
                     setForcedLeftEntryId(null);
@@ -2060,7 +2097,7 @@ export function StorageEntriesSection({
 
                 {entryFoldersOpen && (
                   <section
-                    className="absolute right-0 top-[calc(100%+10px)] z-40 w-[280px] max-w-[calc(100vw-3rem)] rounded-card border border-brand-200 bg-white/25 p-3 shadow-card"
+                    className="absolute right-0 top-[calc(100%+10px)] z-40 w-[280px] max-w-[calc(100vw-3rem)] rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(250,252,255,0.96)_0%,rgba(239,244,249,0.92)_100%)] p-3 shadow-[0_18px_40px_rgba(15,23,42,0.10)] backdrop-blur-md"
                     role="menu"
                     aria-label={t("storage.entryFoldersMenuAria")}
                   >
@@ -2104,14 +2141,15 @@ export function StorageEntriesSection({
               </div>
               </div>
 
-              <div className="grid gap-3">
-              <article className="flex items-start justify-between gap-3 p-3" style={{ 
-                background: 'rgba(255, 255, 255, 0.77)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                borderRadius: '16px',
-                border: '1px solid rgba(255, 255, 255, 0.3)'
-              }}>
+              <div className="scrollbar-brand min-h-0 overflow-y-auto pr-1">
+                <EntryDetailContent
+                  entry={selectedEntry}
+                  onEntriesUpdated={onEntriesUpdated}
+                  onUnauthorized={onUnauthorized}
+                />
+              </div>
+              {/*
+              <article className="hidden">
                 <div className="min-w-0 w-full">
                   <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
                     {t("storage.detailEntryTitle")}
@@ -2185,39 +2223,60 @@ export function StorageEntriesSection({
                   {editingField === "text" ? (
                     <div className="mt-2 grid gap-2">
                       {selectedEntry.flag === "CHECKLIST" ? (
-                        <div className="grid gap-2">
-                          {checklistDraft.map((item, index) => (
-                            <div key={`checklist-edit-${index}`} className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={item.checked}
-                                onChange={(event) => updateChecklistItem(index, { checked: event.target.checked })}
-                                disabled={savingField === "text"}
-                                className="h-4 w-4 rounded border-brand-300 text-brand-600 focus:ring-brand-200"
-                              />
-                              <input
-                                type="text"
-                                value={item.text}
-                                onChange={(event) => updateChecklistItem(index, { text: event.target.value })}
-                                className={inputClass}
-                                disabled={savingField === "text"}
-                              />
-                              <button
-                                type="button"
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                                onClick={() => {
-                                  setChecklistDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                                  clearTextFeedback();
-                                }}
-                                disabled={savingField === "text"}
+                        <div className="grid gap-3">
+                          <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
+                            {checklistDraft.map((item, index) => (
+                              <div
+                                key={`checklist-edit-${index}`}
+                                className={`flex items-center gap-3 rounded-[18px] border px-3 py-2.5 shadow-sm transition ${
+                                  item.checked
+                                    ? "border-emerald-200 bg-emerald-50/80"
+                                    : "border-brand-200 bg-white/65"
+                                }`}
                               >
-                                <TrashIcon className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
+                                <button
+                                  type="button"
+                                  onClick={() => updateChecklistItem(index, { checked: !item.checked })}
+                                  disabled={savingField === "text"}
+                                  aria-pressed={item.checked}
+                                  aria-label={item.checked ? "Marcar tarea como pendiente" : "Marcar tarea como hecha"}
+                                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition ${
+                                    item.checked
+                                      ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
+                                      : "border-brand-300 bg-white text-brand-400 hover:border-brand-400 hover:text-brand-600"
+                                  }`}
+                                >
+                                  <SuccessCheckCircleIcon className="h-5 w-5" />
+                                </button>
+                                <input
+                                  type="text"
+                                  value={item.text}
+                                  onChange={(event) => updateChecklistItem(index, { text: event.target.value })}
+                                  className={`min-w-0 flex-1 rounded-[14px] border px-3 py-2 text-sm outline-none transition ${
+                                    item.checked
+                                      ? "border-emerald-200 bg-white/80 text-ink-700 line-through placeholder:text-emerald-300 focus:border-emerald-400"
+                                      : "border-brand-200 bg-white text-ink-800 focus:border-brand-500"
+                                  }`}
+                                  disabled={savingField === "text"}
+                                  placeholder={`Tarea ${index + 1}`}
+                                />
+                                <button
+                                  type="button"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-500 transition hover:border-rose-300 hover:bg-rose-50"
+                                  onClick={() => {
+                                    setChecklistDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                                    clearTextFeedback();
+                                  }}
+                                  disabled={savingField === "text"}
+                                >
+                                  <TrashIcon className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                           <button
                             type="button"
-                            className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-brand-300 bg-white px-4 text-sm font-semibold text-ink-800 shadow-sm transition hover:-translate-y-0.5 hover:bg-brand-50"
                             onClick={() => {
                               setChecklistDraft((current) => [...current, { checked: false, text: "" }]);
                               clearTextFeedback();
@@ -2228,7 +2287,7 @@ export function StorageEntriesSection({
                           </button>
                         </div>
                       ) : selectedEntry.flag === "TABLE" ? (
-                        <div className="grid gap-3">
+                        <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
                           <div className="scrollbar-brand max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
                             <table className="w-max min-w-full border-collapse text-sm">
                               <thead className="bg-brand-50">
@@ -2336,33 +2395,41 @@ export function StorageEntriesSection({
                           </div>
                         </div>
                       ) : selectedEntry.flag === "ENUMERATION" ? (
-                        <div className="grid gap-2">
-                          {enumerationDraft.map((item, index) => (
-                            <div key={`enum-edit-${index}`} className="flex items-center gap-2">
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
-                              <input
-                                type="text"
-                                value={item.text}
-                                onChange={(event) => updateEnumerationItem(index, event.target.value)}
-                                className={inputClass}
-                                disabled={savingField === "text"}
-                              />
-                              <button
-                                type="button"
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                                onClick={() => {
-                                  setEnumerationDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                                  clearTextFeedback();
-                                }}
-                                disabled={savingField === "text"}
+                        <div className="grid gap-3">
+                          <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
+                            {enumerationDraft.map((item, index) => (
+                              <div
+                                key={`enum-edit-${index}`}
+                                className="flex items-center gap-3 rounded-[18px] border border-violet-200 bg-violet-50/60 px-3 py-2.5 shadow-sm"
                               >
-                                <TrashIcon className="h-4 w-4" />
-                              </button>
-                            </div>
-                          ))}
+                                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
+                                  {index + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={item.text}
+                                  onChange={(event) => updateEnumerationItem(index, event.target.value)}
+                                  className="min-w-0 flex-1 rounded-[14px] border border-violet-200 bg-white px-3 py-2 text-sm text-ink-800 outline-none transition focus:border-violet-400"
+                                  disabled={savingField === "text"}
+                                  placeholder={`Elemento ${index + 1}`}
+                                />
+                                <button
+                                  type="button"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-500 transition hover:border-rose-300 hover:bg-rose-50"
+                                  onClick={() => {
+                                    setEnumerationDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                                    clearTextFeedback();
+                                  }}
+                                  disabled={savingField === "text"}
+                                >
+                                  <TrashIcon className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                           <button
                             type="button"
-                            className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-violet-300 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:-translate-y-0.5 hover:bg-violet-50"
                             onClick={() => {
                               setEnumerationDraft((current) => [...current, { text: "" }]);
                               clearTextFeedback();
@@ -2446,11 +2513,16 @@ export function StorageEntriesSection({
                         </div>
                       ) : selectedEntry.flag === "ENUMERATION" ? (
                         selectedEnumerationItems.length > 0 ? (
-                          <div className="mt-2 grid gap-2">
+                          <div className="scrollbar-brand mt-2 grid max-h-72 gap-3 overflow-y-auto pr-1">
                             {selectedEnumerationItems.map((item, index) => (
-                              <div key={`enum-view-${index}`} className="flex items-start gap-2 px-1">
-                                <span className="mt-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
-                                <p className="break-all whitespace-pre-wrap text-sm text-ink-700">{item.text}</p>
+                              <div
+                                key={`enum-view-${index}`}
+                                className="flex items-start gap-3 rounded-[18px] border border-violet-200 bg-violet-50/60 px-3 py-2.5 shadow-sm"
+                              >
+                                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
+                                  {index + 1}
+                                </span>
+                                <p className="break-all whitespace-pre-wrap pt-1 text-sm text-ink-700">{item.text}</p>
                               </div>
                             ))}
                           </div>
@@ -2465,7 +2537,7 @@ export function StorageEntriesSection({
                     </>
                   )}
                 </div>
-                {editingField !== "text" && (
+                {editingField !== "text" && !shouldOpenTextEditorByDefault(selectedEntry) && (
                   <button
                     type="button"
                     className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
@@ -2749,37 +2821,11 @@ export function StorageEntriesSection({
                 {detailSaveSuccess && (
                   <p className="text-sm font-semibold text-emerald-600">{detailSaveSuccess}</p>
                 )}
-              </div>
+              </article>
+              */}
             </section>
 
-            <button
-              type="button"
-              className={`hidden w-[220px] shrink-0 rounded-[20px] border border-white/30 p-3 text-left shadow-[0_8px_32px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.5),inset_0_-1px_0_rgba(255,255,255,0.1),inset_0_0_6px_3px_rgba(255,255,255,0.3)] backdrop-blur-[20px] transform-gpu transition-all duration-300 ease-out lg:block ${rightCardScaleClass} ${
-                rightRelatedEntry
-                  ? "hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.99]"
-                  : "cursor-default border-white/20 opacity-70"
-              }`}
-              style={{ background: 'rgb(170, 170, 170)' }}
-              onClick={() => {
-                if (rightRelatedEntry) {
-                  openRelatedEntry(rightRelatedEntry, "right");
-                }
-              }}
-              aria-label={rightRelatedEntry ? t("storage.openRelatedAria", { title: rightRelatedEntry.title }) : t("storage.noRelatedEntries")}
-              disabled={!rightRelatedEntry || carouselSliding}
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-500">{t("storage.relatedRight")}</p>
-              {rightRelatedEntry ? (
-                <>
-                  <h4 className="mt-1 break-words text-sm font-bold text-ink-900">{rightRelatedEntry.title}</h4>
-                  <p className="mt-2 break-words text-xs text-ink-700 overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
-                    {buildEntryText(rightRelatedEntry, t("entries.noContent"))}
-                  </p>
-                </>
-              ) : (
-                <p className="mt-1 text-xs text-ink-600">{t("storage.noRelatedEntries")}</p>
-              )}
-            </button>
+            {renderRelatedStack(rightRelatedEntries, "right", rightCardScaleClass, t("storage.relatedRight"))}
             </div>
           </div>
         </div>

@@ -53,11 +53,23 @@ public class EntryVectorStoreService {
             jdbcTemplate.execute("create extension if not exists vector with schema extensions");
             jdbcTemplate.execute(
                 "alter table entry_embeddings " +
+                    "add column if not exists focus_embedding_json TEXT"
+            );
+            jdbcTemplate.execute(
+                "alter table entry_embeddings " +
                     "add column if not exists embedding extensions.vector(" + embeddingDimensions + ")"
+            );
+            jdbcTemplate.execute(
+                "alter table entry_embeddings " +
+                    "add column if not exists focus_embedding extensions.vector(" + embeddingDimensions + ")"
             );
             jdbcTemplate.execute(
                 "create index if not exists entry_embeddings_embedding_hnsw " +
                     "on entry_embeddings using hnsw (embedding vector_cosine_ops)"
+            );
+            jdbcTemplate.execute(
+                "create index if not exists entry_embeddings_focus_embedding_hnsw " +
+                    "on entry_embeddings using hnsw (focus_embedding vector_cosine_ops)"
             );
             pgvectorReady = true;
             log.info("pgvector schema ready for entry_embeddings with dimensions={}", embeddingDimensions);
@@ -105,6 +117,14 @@ public class EntryVectorStoreService {
     }
 
     public boolean upsertEntryEmbedding(Long entryId, double[] vector) {
+        return upsertVector(entryId, vector, VectorKind.CONTENT);
+    }
+
+    public boolean upsertFocusEmbedding(Long entryId, double[] vector) {
+        return upsertVector(entryId, vector, VectorKind.FOCUS);
+    }
+
+    private boolean upsertVector(Long entryId, double[] vector, VectorKind kind) {
         if (entryId == null || vector == null || vector.length == 0 || !isReady()) {
             return false;
         }
@@ -120,7 +140,7 @@ public class EntryVectorStoreService {
 
         try {
             jdbcTemplate.update(
-                "update entry_embeddings set embedding = cast(? as extensions.vector(" + embeddingDimensions + ")) where entry_id = ?",
+                "update entry_embeddings set " + kind.columnName() + " = cast(? as extensions.vector(" + embeddingDimensions + ")) where entry_id = ?",
                 toVectorLiteral(vector),
                 entryId
             );
@@ -150,6 +170,17 @@ public class EntryVectorStoreService {
         double similarityThreshold,
         Long excludedEntryId
     ) {
+        return findNearestEntryMatches(userId, queryVector, limit, similarityThreshold, excludedEntryId, VectorKind.CONTENT);
+    }
+
+    public List<NeighborMatch> findNearestEntryMatches(
+        Long userId,
+        double[] queryVector,
+        int limit,
+        double similarityThreshold,
+        Long excludedEntryId,
+        VectorKind kind
+    ) {
         if (userId == null || queryVector == null || queryVector.length == 0 || limit <= 0 || !isReady()) {
             return List.of();
         }
@@ -166,16 +197,16 @@ public class EntryVectorStoreService {
         String sql = """
             select
               ee.entry_id,
-              1 - (ee.embedding <=> cast(? as extensions.vector(%1$d))) as similarity
+              1 - (ee.%2$s <=> cast(? as extensions.vector(%1$d))) as similarity
             from entry_embeddings ee
             join entries e on e.id = ee.entry_id
             where e.user_id = ?
-              and ee.embedding is not null
+              and ee.%2$s is not null
               and (? is null or ee.entry_id <> ?)
-              and 1 - (ee.embedding <=> cast(? as extensions.vector(%1$d))) >= ?
-            order by ee.embedding <=> cast(? as extensions.vector(%1$d)) asc
+              and 1 - (ee.%2$s <=> cast(? as extensions.vector(%1$d))) >= ?
+            order by ee.%2$s <=> cast(? as extensions.vector(%1$d)) asc
             limit ?
-            """.formatted(embeddingDimensions);
+            """.formatted(embeddingDimensions, kind.columnName());
 
         try {
             return jdbcTemplate.query(
@@ -259,5 +290,20 @@ public class EntryVectorStoreService {
     }
 
     public record NeighborMatch(Long entryId, double similarity) {
+    }
+
+    public enum VectorKind {
+        CONTENT("embedding"),
+        FOCUS("focus_embedding");
+
+        private final String columnName;
+
+        VectorKind(String columnName) {
+            this.columnName = columnName;
+        }
+
+        public String columnName() {
+            return columnName;
+        }
     }
 }

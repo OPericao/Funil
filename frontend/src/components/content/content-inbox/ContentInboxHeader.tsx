@@ -45,7 +45,7 @@ function desktopSectionButtonClass(active: boolean) {
   return `inline-flex h-10 w-24 shrink-0 items-center justify-center text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70 ${
     active
       ? "rounded-lg bg-[#111827] text-white"
-      : "text-ink-700 hover:bg-[rgba(170,170,170,0.52)] hover:text-ink-900 hover:backdrop-blur-[20px] hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.5),inset_0_-1px_0_rgba(255,255,255,0.1),inset_0_0_6px_3px_rgba(255,255,255,0.3)]"
+      : "rounded-lg text-ink-700 hover:bg-[linear-gradient(180deg,rgba(255,248,241,0.96)_0%,rgba(229,243,255,0.9)_100%)] hover:text-ink-900 hover:backdrop-blur-[18px] hover:shadow-[0_16px_30px_rgba(15,23,42,0.08),inset_0_1px_0_rgba(255,255,255,0.88)]"
   }`;
 }
 
@@ -66,7 +66,7 @@ export function ContentInboxHeader({
   const { language, setLanguage, t } = useI18n();
 
   return (
-    <header className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b border-[#F0F0F0] bg-[rgba(217,234,248,0.38)] px-4 backdrop-blur-sm sm:px-6">
+    <header className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b border-white/90 bg-[linear-gradient(180deg,rgba(255,247,239,0.9)_0%,rgba(226,242,255,0.8)_100%)] px-4 backdrop-blur-md sm:px-6">
       <button
         type="button"
         className="inline-flex items-center justify-center"
@@ -102,7 +102,7 @@ export function ContentInboxHeader({
         <div className="relative">
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-[#F0F0F0] bg-white/25 text-[#13505B] transition hover:bg-[#13505B] hover:text-[#F0F0F0]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/90 bg-[linear-gradient(180deg,rgba(255,248,241,0.96)_0%,rgba(228,243,255,0.9)_100%)] text-[#13505B] shadow-[0_14px_26px_rgba(15,23,42,0.07)] transition hover:border-[#13505B] hover:bg-[#13505B] hover:text-[#F0F0F0]"
             aria-label={t("notifications.ariaButton")}
             aria-haspopup="menu"
             aria-expanded={notificationsOpen}
@@ -113,7 +113,7 @@ export function ContentInboxHeader({
 
           {notificationsOpen ? (
             <section
-              className="absolute top-[calc(100%+10px)] z-40 w-[320px] max-w-[calc(100vw-2rem)] rounded-card border border-[#F0F0F0] bg-white/95 p-3 shadow-card backdrop-blur-sm"
+              className="absolute top-[calc(100%+10px)] z-40 w-[320px] max-w-[calc(100vw-2rem)] rounded-card border border-white/90 bg-[linear-gradient(180deg,rgba(255,248,241,0.97)_0%,rgba(234,245,255,0.93)_100%)] p-3 shadow-card backdrop-blur-md"
               style={{ right: 0 }}
               role="menu"
               aria-label={t("notifications.menuAria")}

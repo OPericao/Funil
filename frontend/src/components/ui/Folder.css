@@ -69,8 +69,12 @@
   position: relative;
   width: 100px;
   height: 80px;
-  background: var(--folder-back-color);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 22%, var(--folder-back-color) 78%) 0%, var(--folder-back-color) 100%);
   border-radius: 0 10px 10px 10px;
+  box-shadow:
+    0 14px 26px rgba(15, 23, 42, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .folder__back::after {
@@ -81,7 +85,8 @@
   width: 30px;
   height: 10px;
   content: "";
-  background: var(--folder-back-color);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 18%, var(--folder-back-color) 82%) 0%, var(--folder-back-color) 100%);
   border-radius: 5px 5px 0 0;
 }
 
@@ -121,8 +126,11 @@
   z-index: 3;
   width: 100%;
   height: 100%;
-  background: var(--folder-color);
-  box-shadow: inset 0 -2px 0 rgba(15, 23, 42, 0.16);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 14%, var(--folder-color) 86%) 0%, var(--folder-color) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -2px 0 rgba(15, 23, 42, 0.16);
   border-radius: 5px 10px 10px 10px;
   transform-origin: bottom;
   transition: all 0.3s ease-in-out;
@@ -148,6 +156,6 @@
   display: block;
   width: 100%;
   height: 5px;
-  background: rgba(82, 39, 255, 0.14);
+  background: rgba(82, 39, 255, 0.24);
   border-radius: 999px;
 }

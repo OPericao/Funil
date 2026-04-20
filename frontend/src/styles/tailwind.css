@@ -82,16 +82,17 @@
   }
 
   .glass-card {
-    background: rgba(170, 170, 170, 0.52);
+    background:
+      linear-gradient(180deg, rgba(255, 248, 240, 0.96) 0%, rgba(233, 245, 255, 0.9) 100%);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.9);
     box-shadow: 
-      0 8px 32px rgba(0, 0, 0, 0.1), 
-      inset 0 1px 0 rgba(255, 255, 255, 0.5), 
-      inset 0 -1px 0 rgba(255, 255, 255, 0.1), 
-      inset 0 0 6px 3px rgba(255, 255, 255, 0.3);
+      0 20px 48px rgba(15, 23, 42, 0.12), 
+      inset 0 1px 0 rgba(255, 255, 255, 0.96), 
+      inset 0 -1px 0 rgba(203, 213, 225, 0.45), 
+      inset 0 0 18px 4px rgba(255, 255, 255, 0.52);
     position: relative;
     overflow: hidden;
   }
@@ -101,27 +102,41 @@
   }
 
   .glass-surface {
-    background: rgba(70, 143, 221, 0.22);
-    backdrop-filter: blur(11px);
-    -webkit-backdrop-filter: blur(11px);
+    background:
+      linear-gradient(180deg, rgba(255, 248, 241, 0.94) 0%, rgba(227, 243, 255, 0.86) 100%);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
     border-radius: 9999px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.88);
+    box-shadow:
+      0 12px 28px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.92),
+      inset 0 -1px 0 rgba(203, 213, 225, 0.28);
   }
 
   .glass-input {
-    background: rgba(45, 52, 54, 0.2);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: linear-gradient(180deg, rgba(255, 252, 248, 0.94) 0%, rgba(245, 250, 255, 0.88) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow:
+      0 10px 22px rgba(15, 23, 42, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.94),
+      inset 0 -1px 0 rgba(203, 213, 225, 0.32);
   }
 
   .glass-container {
-    background: rgba(255, 255, 255, 0.53);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background:
+      linear-gradient(180deg, rgba(255, 250, 244, 0.92) 0%, rgba(236, 244, 252, 0.86) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.88);
+    box-shadow:
+      0 12px 24px rgba(15, 23, 42, 0.07),
+      inset 0 1px 0 rgba(255, 255, 255, 0.92),
+      inset 0 -1px 0 rgba(203, 213, 225, 0.26);
   }
 
   .solid-input {
