@@ -11,7 +11,7 @@ import {
   updateTextResource
 } from "../../../api/resources";
 import { useI18n } from "../../../i18n/I18nProvider";
-import type { EntryFolderItem, EntryItem, FolderItem } from "../../../types/resource";
+import type { EntryFolderItem, EntryItem, FolderItem, EntryRelationshipItem } from "../../../types/resource";
 import { readErrorMessage } from "../../../utils/error";
 import GlassIcons from "../../ui/GlassIcons";
 import { errorTextClass, fieldLabelClass, inputClass } from "../../ui/styles";
@@ -34,9 +34,11 @@ import {
 import { CreateFolderModal } from "./CreateFolderModal";
 import { Portal } from "../../ui/Portal";
 import { HeroVideoDialog } from "../../ui/HeroVideoDialog";
+import { getRelatedEntryIds } from "../../../utils/relationshipGraph";
 
 type StorageEntriesSectionProps = {
   entries: EntryItem[];
+  manualRelationships?: EntryRelationshipItem[];
   loading: boolean;
   error: string | null;
   searchValue: string;
@@ -51,6 +53,9 @@ type StorageEntriesSectionProps = {
 };
 
 type EntryFlagFilter = "ALL" | "YOUTUBE" | "TWITCH" | "SPOTIFY" | "CHECKLIST" | "TABLE" | "LINK" | "ENUMERATION";
+type ChecklistDraftItem = { checked: boolean; text: string };
+type EnumerationDraftItem = { text: string };
+type EditableCsvTable = { delimiter: string; headers: string[]; rows: string[][] };
 
 const CHECKLIST_TITLES = new Set(["checklist", "todo list", "todolist", "todo"]);
 
@@ -104,6 +109,23 @@ function normalizeForSearch(value: string) {
 }
 
 function buildEntryText(entry: EntryItem, emptyText: string) {
+  if (entry.flag === "CHECKLIST") {
+    const todoItems = parseChecklistDraft(buildEntryTodoListText(entry) ?? "");
+    return todoItems.length > 0 ? `${todoItems.length} tareas` : emptyText;
+  }
+
+  if (entry.flag === "TABLE") {
+    const tableResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
+    const table = parseCsvTable(tableResource?.textContent?.trim() ?? "");
+    return table ? `${table.rows.length} filas · ${table.headers.length} columnas` : "Tabla";
+  }
+
+  if (entry.flag === "ENUMERATION") {
+    const listResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
+    const items = parseEnumerationDraft(listResource?.textContent ?? "");
+    return items.length > 0 ? `${items.length} elementos` : "Lista";
+  }
+
   const textResources = entry.resources
     .filter(
       (resource) =>
@@ -279,6 +301,97 @@ function renderTodoListMarkdown(markdown: string): ReactNode {
       </p>
     );
   });
+}
+
+function parseChecklistDraft(text: string): ChecklistDraftItem[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (line.startsWith("- [x] ") || line.startsWith("- [X] ")) {
+        return { checked: true, text: line.slice(6).trim() };
+      }
+      if (line.startsWith("- [ ] ")) {
+        return { checked: false, text: line.slice(6).trim() };
+      }
+      if (line.startsWith("- ")) {
+        return { checked: false, text: line.slice(2).trim() };
+      }
+      return { checked: false, text: line.replace(/^\d+[.)]\s+/, "").trim() };
+    })
+    .filter((item) => item.text.length > 0);
+}
+
+function serializeChecklistDraft(items: ChecklistDraftItem[]): string {
+  return items
+    .filter((item) => item.text.trim().length > 0)
+    .map((item) => `- [${item.checked ? "x" : " "}] ${item.text.trim()}`)
+    .join("\n");
+}
+
+function parseEnumerationDraft(text: string): EnumerationDraftItem[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => ({ text: line.replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, "").trim() }))
+    .filter((item) => item.text.length > 0);
+}
+
+function serializeEnumerationDraft(items: EnumerationDraftItem[]): string {
+  return items
+    .map((item) => item.text.trim())
+    .filter(Boolean)
+    .map((text) => `- ${text}`)
+    .join("\n");
+}
+
+function buildDefaultEditableTable(): EditableCsvTable {
+  return {
+    delimiter: ",",
+    headers: ["Col 1", "Col 2"],
+    rows: [["", ""]]
+  };
+}
+
+function parseEditableCsvTable(text: string): EditableCsvTable {
+  const parsed = parseCsvTable(text);
+  if (!parsed) {
+    return buildDefaultEditableTable();
+  }
+
+  return {
+    delimiter: detectCsvDelimiter(text),
+    headers: parsed.headers.length > 0 ? parsed.headers : buildDefaultEditableTable().headers,
+    rows: parsed.rows.length > 0 ? parsed.rows : [Array(parsed.headers.length).fill("")]
+  };
+}
+
+function escapeCsvCell(value: string, delimiter: string): string {
+  const normalized = value ?? "";
+  if (normalized.includes('"')) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  if (normalized.includes(delimiter) || normalized.includes("\n")) {
+    return `"${normalized}"`;
+  }
+  return normalized;
+}
+
+function serializeEditableCsvTable(table: EditableCsvTable): string {
+  const delimiter = table.delimiter || ",";
+  const width = Math.max(
+    1,
+    table.headers.length,
+    ...table.rows.map((row) => row.length)
+  );
+  const headers = [...table.headers, ...Array(Math.max(0, width - table.headers.length)).fill("")].slice(0, width);
+  const rows = table.rows.map((row) => [...row, ...Array(Math.max(0, width - row.length)).fill("")].slice(0, width));
+
+  return [headers, ...rows]
+    .map((row) => row.map((cell) => escapeCsvCell(cell, delimiter)).join(delimiter))
+    .join("\n");
 }
 
 function getEntryLinks(entry: EntryItem) {
@@ -603,76 +716,10 @@ function getEntryMedia(entry: EntryItem) {
     .filter((media) => Boolean(media.url));
 }
 
-function getEntryTagSet(entry: EntryItem) {
-  return new Set((entry.tags ?? []).map((tag) => tag.name.trim().toLowerCase()).filter(Boolean));
-}
-
-function tokenizeEntryText(value: string) {
-  return new Set(
-    value
-      .toLowerCase()
-      .split(/[^a-z0-9áéíóúüñ]+/i)
-      .map((token) => token.trim())
-      .filter((token) => token.length >= 3)
-  );
-}
-
-function getJaccardScore(a: Set<string>, b: Set<string>) {
-  if (a.size === 0 || b.size === 0) {
-    return 0;
-  }
-  let intersection = 0;
-  for (const token of a) {
-    if (b.has(token)) {
-      intersection += 1;
-    }
-  }
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
-}
-
-function getRelatedEntries(entries: EntryItem[], selectedEntry: EntryItem, maxItems = 2) {
-  const selectedTagSet = getEntryTagSet(selectedEntry);
-  const selectedTokens = tokenizeEntryText(buildEntrySearchableText(selectedEntry));
-
-  const candidates = entries
-    .filter((entry) => entry.id !== selectedEntry.id)
-    .map((entry) => {
-      const candidateTagSet = getEntryTagSet(entry);
-      let sharedTags = 0;
-      for (const tag of selectedTagSet) {
-        if (candidateTagSet.has(tag)) {
-          sharedTags += 1;
-        }
-      }
-
-      const textSimilarity = getJaccardScore(selectedTokens, tokenizeEntryText(buildEntrySearchableText(entry)));
-      const hasRelation = sharedTags > 0 || textSimilarity > 0;
-      const score = sharedTags * 3 + textSimilarity * 10;
-
-      return {
-        entry,
-        sharedTags,
-        textSimilarity,
-        hasRelation,
-        score
-      };
-    })
-    .filter((candidate) => candidate.hasRelation)
-    .sort((a, b) => {
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
-      return b.entry.updatedAt.localeCompare(a.entry.updatedAt);
-    })
-    .slice(0, maxItems)
-    .map((candidate) => candidate.entry);
-
-  return candidates;
-}
 
 export function StorageEntriesSection({
   entries,
+  manualRelationships = [],
   loading,
   error,
   searchValue,
@@ -707,6 +754,9 @@ export function StorageEntriesSection({
   const [editingField, setEditingField] = useState<"title" | "text" | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [textDraft, setTextDraft] = useState("");
+  const [checklistDraft, setChecklistDraft] = useState<ChecklistDraftItem[]>([]);
+  const [enumerationDraft, setEnumerationDraft] = useState<EnumerationDraftItem[]>([]);
+  const [tableDraft, setTableDraft] = useState<EditableCsvTable>(buildDefaultEditableTable());
   const [savingField, setSavingField] = useState<"title" | "text" | null>(null);
   const [detailSaveError, setDetailSaveError] = useState<string | null>(null);
   const [detailSaveSuccess, setDetailSaveSuccess] = useState<string | null>(null);
@@ -724,12 +774,8 @@ export function StorageEntriesSection({
   const carouselTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filteredEntries = useMemo(() => {
-    const query = normalizeForSearch(searchValue.trim());
-    const searchFiltered = !query
-      ? entries
-      : searchResults !== null
-        ? searchResults
-        : entries.filter((entry) => normalizeForSearch(buildEntrySearchableText(entry)).includes(query));
+    const query = searchValue.trim();
+    const searchFiltered = !query ? entries : (searchResults ?? []);
 
     if (activeFlagFilter === "ALL") {
       return searchFiltered;
@@ -852,77 +898,118 @@ export function StorageEntriesSection({
     return (
       selectedEntry.resources.find(
         (resource) =>
-          (resource.type === "RAW" && !isChecklistResource(resource))) ?? null
+        (resource.type === "RAW" && !isChecklistResource(resource))) ?? null
     );
   }, [selectedEntry]);
 
-  const selectedTextResourceStableId = selectedTextResource?.id ?? null;
-  const selectedTodoListText = useMemo(() => {
+  const selectedChecklistResource = useMemo(() => {
     if (!selectedEntry) {
       return null;
     }
-    return buildEntryTodoListText(selectedEntry);
+    return selectedEntry.resources.find((resource) => isChecklistResource(resource)) ?? null;
   }, [selectedEntry]);
-  
+  const selectedEditableTextResource = useMemo(() => {
+    if (!selectedEntry) {
+      return null;
+    }
+    if (selectedEntry.flag === "CHECKLIST") {
+      return selectedChecklistResource;
+    }
+    return selectedTextResource;
+  }, [selectedChecklistResource, selectedEntry, selectedTextResource]);
+
+  const selectedTextResourceStableId = selectedEditableTextResource?.id ?? null;
+  const selectedTodoListText = useMemo(() => {
+    if (selectedEntry?.flag !== "CHECKLIST") {
+      return null;
+    }
+    return selectedChecklistResource?.textContent?.trim() ?? null;
+  }, [selectedChecklistResource, selectedEntry]);
+
   const selectedCsvTable = useMemo(() => {
     if (!selectedEntry || selectedEntry.flag !== "TABLE") {
       return null;
     }
-    const rawText = selectedTextResource?.textContent?.trim() ?? "";
+    const rawText = selectedEditableTextResource?.textContent?.trim() ?? "";
     if (!rawText) {
       return null;
     }
     return parseCsvTable(rawText);
-  }, [selectedEntry, selectedTextResource]);
+  }, [selectedEditableTextResource, selectedEntry]);
+
+  const selectedEnumerationItems = useMemo(() => {
+    if (selectedEntry?.flag !== "ENUMERATION") {
+      return [];
+    }
+    return parseEnumerationDraft(selectedEditableTextResource?.textContent ?? "");
+  }, [selectedEditableTextResource, selectedEntry]);
+  const textDetailLabel = selectedEntry?.flag === "TABLE"
+    ? t("storage.detailTable")
+    : selectedEntry?.flag === "CHECKLIST"
+      ? t("storage.detailTodoList")
+      : selectedEntry?.flag === "ENUMERATION"
+        ? t("icon.enumeration")
+        : t("storage.detailDescription");
 
   const relatedEntries = useMemo(() => {
     if (!selectedEntry) {
       return [];
     }
-    return getRelatedEntries(entries, selectedEntry, 8);
-  }, [entries, selectedEntry]);
+
+    const relatedIds = getRelatedEntryIds(selectedEntry.id, entries, manualRelationships);
+
+    return entries.filter(
+      (entry) => entry.id !== selectedEntry.id && relatedIds.has(entry.id)
+    );
+  }, [selectedEntry, entries, manualRelationships]);
+
   const entriesById = useMemo(() => {
     return new Map(entries.map((entry) => [entry.id, entry]));
   }, [entries]);
+
   const { leftRelatedEntry, rightRelatedEntry } = useMemo(() => {
-    if (!selectedEntry) {
-      return { leftRelatedEntry: null, rightRelatedEntry: null };
+  if (!selectedEntry) {
+    return { leftRelatedEntry: null, rightRelatedEntry: null };
+  }
+
+  const candidates = relatedEntries.filter((entry) => entry.id !== selectedEntry.id);
+  const usedIds = new Set<number>();
+
+  let left: EntryItem | null = null;
+  const forcedLeft = forcedLeftEntryId !== null ? entriesById.get(forcedLeftEntryId) ?? null : null;
+  if (
+    forcedLeft &&
+    forcedLeft.id !== selectedEntry.id &&
+    candidates.some((entry) => entry.id === forcedLeft.id)
+  ) {
+    left = forcedLeft;
+    usedIds.add(forcedLeft.id);
+  } else {
+    left = candidates.find((entry) => !usedIds.has(entry.id)) ?? null;
+    if (left) {
+      usedIds.add(left.id);
     }
+  }
 
-    const candidates = relatedEntries.filter((entry) => entry.id !== selectedEntry.id);
-    const usedIds = new Set<number>();
-
-    let left: EntryItem | null = null;
-    const forcedLeft = forcedLeftEntryId !== null ? entriesById.get(forcedLeftEntryId) ?? null : null;
-    if (forcedLeft && forcedLeft.id !== selectedEntry.id) {
-      left = forcedLeft;
-      usedIds.add(forcedLeft.id);
-    } else {
-      left = candidates.find((entry) => !usedIds.has(entry.id)) ?? null;
-      if (left) {
-        usedIds.add(left.id);
-      }
+  let right: EntryItem | null = null;
+  const forcedRight = forcedRightEntryId !== null ? entriesById.get(forcedRightEntryId) ?? null : null;
+  if (
+    forcedRight &&
+    forcedRight.id !== selectedEntry.id &&
+    !usedIds.has(forcedRight.id) &&
+    candidates.some((entry) => entry.id === forcedRight.id)
+  ) {
+    right = forcedRight;
+    usedIds.add(forcedRight.id);
+  } else {
+    right = candidates.find((entry) => !usedIds.has(entry.id)) ?? null;
+    if (right) {
+      usedIds.add(right.id);
     }
+  }
 
-    let right: EntryItem | null = null;
-    const forcedRight = forcedRightEntryId !== null ? entriesById.get(forcedRightEntryId) ?? null : null;
-    if (forcedRight && forcedRight.id !== selectedEntry.id && !usedIds.has(forcedRight.id)) {
-      right = forcedRight;
-      usedIds.add(forcedRight.id);
-    } else {
-      right = candidates.find((entry) => !usedIds.has(entry.id)) ?? null;
-      if (right) {
-        usedIds.add(right.id);
-      }
-    }
-
-    if (!right) {
-      right =
-        entries.find((entry) => entry.id !== selectedEntry.id && !usedIds.has(entry.id)) ?? null;
-    }
-
-    return { leftRelatedEntry: left, rightRelatedEntry: right };
-  }, [entries, entriesById, forcedLeftEntryId, forcedRightEntryId, relatedEntries, selectedEntry]);
+  return { leftRelatedEntry: left, rightRelatedEntry: right };
+}, [entriesById, forcedLeftEntryId, forcedRightEntryId, relatedEntries, selectedEntry]);
 
   const selectedFolderEntries = useMemo(() => {
     if (!selectedFolder) {
@@ -1047,6 +1134,9 @@ export function StorageEntriesSection({
       setEditingField(null);
       setTitleDraft("");
       setTextDraft("");
+      setChecklistDraft([]);
+      setEnumerationDraft([]);
+      setTableDraft(buildDefaultEditableTable());
       setDetailSaveError(null);
       setDetailSaveSuccess(null);
       setDeleteConfirmOpen(false);
@@ -1061,7 +1151,11 @@ export function StorageEntriesSection({
 
     setEditingField(null);
     setTitleDraft(selectedEntry.title);
-    setTextDraft(selectedTextResource?.textContent ?? "");
+    const baseText = selectedEditableTextResource?.textContent ?? "";
+    setTextDraft(baseText);
+    setChecklistDraft(parseChecklistDraft(baseText));
+    setEnumerationDraft(parseEnumerationDraft(baseText));
+    setTableDraft(parseEditableCsvTable(baseText));
     setDetailSaveError(null);
     setDetailSaveSuccess(null);
   }, [selectedEntryStableId, selectedTextResourceStableId]);
@@ -1308,9 +1402,50 @@ export function StorageEntriesSection({
       return;
     }
     setTitleDraft(selectedEntry.title);
-    setTextDraft(selectedTextResource?.textContent ?? "");
+    const baseText = selectedEditableTextResource?.textContent ?? "";
+    setTextDraft(baseText);
+    setChecklistDraft(parseChecklistDraft(baseText));
+    setEnumerationDraft(parseEnumerationDraft(baseText));
+    setTableDraft(parseEditableCsvTable(baseText));
     setEditingField(null);
     setDetailSaveError(null);
+  }
+
+  function clearTextFeedback() {
+    if (detailSaveError) {
+      setDetailSaveError(null);
+    }
+    if (detailSaveSuccess) {
+      setDetailSaveSuccess(null);
+    }
+  }
+
+  function updateChecklistItem(index: number, patch: Partial<ChecklistDraftItem>) {
+    setChecklistDraft((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+    clearTextFeedback();
+  }
+
+  function updateEnumerationItem(index: number, text: string) {
+    setEnumerationDraft((current) => current.map((item, itemIndex) => (itemIndex === index ? { text } : item)));
+    clearTextFeedback();
+  }
+
+  function updateTableHeader(index: number, value: string) {
+    setTableDraft((current) => ({
+      ...current,
+      headers: current.headers.map((header, headerIndex) => (headerIndex === index ? value : header))
+    }));
+    clearTextFeedback();
+  }
+
+  function updateTableCell(rowIndex: number, cellIndex: number, value: string) {
+    setTableDraft((current) => ({
+      ...current,
+      rows: current.rows.map((row, currentRowIndex) =>
+        currentRowIndex === rowIndex ? row.map((cell, currentCellIndex) => (currentCellIndex === cellIndex ? value : cell)) : row
+      )
+    }));
+    clearTextFeedback();
   }
 
   async function saveTitleChanges() {
@@ -1350,7 +1485,18 @@ export function StorageEntriesSection({
       return;
     }
 
-    const nextText = textDraft.trim();
+    const nextText = (() => {
+      if (selectedEntry.flag === "CHECKLIST") {
+        return serializeChecklistDraft(checklistDraft).trim();
+      }
+      if (selectedEntry.flag === "TABLE") {
+        return serializeEditableCsvTable(tableDraft).trim();
+      }
+      if (selectedEntry.flag === "ENUMERATION") {
+        return serializeEnumerationDraft(enumerationDraft).trim();
+      }
+      return textDraft.trim();
+    })();
     if (!nextText) {
       setDetailSaveError(t("entries.textRequired"));
       return;
@@ -1361,13 +1507,14 @@ export function StorageEntriesSection({
       setDetailSaveError(null);
       setDetailSaveSuccess(null);
 
-      if (selectedTextResource) {
-        await updateTextResource(selectedEntry.id, selectedTextResource.id, {
-          title: selectedTextResource.title ?? undefined,
+      if (selectedEditableTextResource) {
+        await updateTextResource(selectedEntry.id, selectedEditableTextResource.id, {
+          title: selectedEditableTextResource.title ?? undefined,
           textContent: nextText
         });
       } else {
         await createTextResource(selectedEntry.id, {
+          title: selectedEntry.flag === "CHECKLIST" ? "Checklist" : undefined,
           textContent: nextText
         });
       }
@@ -2024,34 +2171,219 @@ export function StorageEntriesSection({
                 )}
               </article>
 
-              <article className="flex items-start justify-between gap-3 p-3" style={{ 
+              <article className="flex min-w-0 items-start justify-between gap-3 overflow-hidden p-3" style={{ 
                 background: 'rgba(255, 255, 255, 0.77)',
                 backdropFilter: 'blur(10px)',
                 WebkitBackdropFilter: 'blur(10px)',
                 borderRadius: '16px',
                 border: '1px solid rgba(255, 255, 255, 0.3)'
               }}>
-                <div className="min-w-0 w-full">
+                <div className="min-w-0 w-full overflow-hidden">
                   <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                    {t("storage.detailDescription")}
+                    {textDetailLabel}
                   </p>
                   {editingField === "text" ? (
                     <div className="mt-2 grid gap-2">
-                      <textarea
-                        value={textDraft}
-                        onChange={(event) => {
-                          setTextDraft(event.target.value);
-                          if (detailSaveError) {
-                            setDetailSaveError(null);
-                          }
-                          if (detailSaveSuccess) {
-                            setDetailSaveSuccess(null);
-                          }
-                        }}
-                        className="w-full rounded-control border border-brand-200 bg-white/25 px-3 py-2.5 text-body text-ink-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-70 resize-none min-h-[160px] max-h-[300px] overflow-y-scroll"
-                        aria-label={t("storage.detailDescription")}
-                        disabled={savingField === "text"}
-                      />
+                      {selectedEntry.flag === "CHECKLIST" ? (
+                        <div className="grid gap-2">
+                          {checklistDraft.map((item, index) => (
+                            <div key={`checklist-edit-${index}`} className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={item.checked}
+                                onChange={(event) => updateChecklistItem(index, { checked: event.target.checked })}
+                                disabled={savingField === "text"}
+                                className="h-4 w-4 rounded border-brand-300 text-brand-600 focus:ring-brand-200"
+                              />
+                              <input
+                                type="text"
+                                value={item.text}
+                                onChange={(event) => updateChecklistItem(index, { text: event.target.value })}
+                                className={inputClass}
+                                disabled={savingField === "text"}
+                              />
+                              <button
+                                type="button"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
+                                onClick={() => {
+                                  setChecklistDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                                  clearTextFeedback();
+                                }}
+                                disabled={savingField === "text"}
+                              >
+                                <TrashIcon className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
+                            onClick={() => {
+                              setChecklistDraft((current) => [...current, { checked: false, text: "" }]);
+                              clearTextFeedback();
+                            }}
+                            disabled={savingField === "text"}
+                          >
+                            Añadir tarea
+                          </button>
+                        </div>
+                      ) : selectedEntry.flag === "TABLE" ? (
+                        <div className="grid gap-3">
+                          <div className="scrollbar-brand max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
+                            <table className="w-max min-w-full border-collapse text-sm">
+                              <thead className="bg-brand-50">
+                                <tr>
+                                  {tableDraft.headers.map((header, index) => (
+                                    <th key={`table-edit-h-${index}`} className="border-b border-brand-200 px-2 py-2 align-top">
+                                      <div className="flex min-w-0 items-center gap-2">
+                                        <input
+                                          type="text"
+                                          value={header}
+                                          onChange={(event) => updateTableHeader(index, event.target.value)}
+                                          className="w-[8rem] min-w-[8rem] max-w-[10rem] rounded-control border border-brand-200 bg-white px-2 py-1 text-sm text-ink-800 outline-none focus:border-brand-500"
+                                          disabled={savingField === "text"}
+                                        />
+                                        <button
+                                          type="button"
+                                          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition hover:bg-brand-100"
+                                          onClick={() => {
+                                            setTableDraft((current) => {
+                                              if (current.headers.length <= 1) {
+                                                return current;
+                                              }
+                                              return {
+                                                ...current,
+                                                headers: current.headers.filter((_, headerIndex) => headerIndex !== index),
+                                                rows: current.rows.map((row) => row.filter((_, cellIndex) => cellIndex !== index))
+                                              };
+                                            });
+                                            clearTextFeedback();
+                                          }}
+                                          disabled={savingField === "text" || tableDraft.headers.length <= 1}
+                                        >
+                                          <XMarkIcon className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {tableDraft.rows.map((row, rowIndex) => (
+                                  <tr key={`table-edit-row-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
+                                    {row.map((cell, cellIndex) => (
+                                      <td key={`table-edit-cell-${rowIndex}-${cellIndex}`} className="border-b border-brand-100 px-2 py-2">
+                                        <input
+                                          type="text"
+                                          value={cell}
+                                          onChange={(event) => updateTableCell(rowIndex, cellIndex, event.target.value)}
+                                          className="w-[8rem] min-w-[8rem] max-w-[10rem] rounded-control border border-brand-200 bg-white px-2 py-1 text-sm text-ink-800 outline-none focus:border-brand-500"
+                                          disabled={savingField === "text"}
+                                        />
+                                      </td>
+                                    ))}
+                                    <td className="border-b border-brand-100 px-2 py-2">
+                                      <button
+                                        type="button"
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition hover:bg-brand-100"
+                                        onClick={() => {
+                                          setTableDraft((current) => ({
+                                            ...current,
+                                            rows: current.rows.filter((_, currentRowIndex) => currentRowIndex !== rowIndex)
+                                          }));
+                                          clearTextFeedback();
+                                        }}
+                                        disabled={savingField === "text"}
+                                      >
+                                        <TrashIcon className="h-4 w-4" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
+                              onClick={() => {
+                                setTableDraft((current) => ({
+                                  ...current,
+                                  headers: [...current.headers, `Col ${current.headers.length + 1}`],
+                                  rows: current.rows.map((row) => [...row, ""])
+                                }));
+                                clearTextFeedback();
+                              }}
+                              disabled={savingField === "text"}
+                            >
+                              Añadir columna
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
+                              onClick={() => {
+                                setTableDraft((current) => ({
+                                  ...current,
+                                  rows: [...current.rows, Array(Math.max(1, current.headers.length)).fill("")]
+                                }));
+                                clearTextFeedback();
+                              }}
+                              disabled={savingField === "text"}
+                            >
+                              Añadir fila
+                            </button>
+                          </div>
+                        </div>
+                      ) : selectedEntry.flag === "ENUMERATION" ? (
+                        <div className="grid gap-2">
+                          {enumerationDraft.map((item, index) => (
+                            <div key={`enum-edit-${index}`} className="flex items-center gap-2">
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
+                              <input
+                                type="text"
+                                value={item.text}
+                                onChange={(event) => updateEnumerationItem(index, event.target.value)}
+                                className={inputClass}
+                                disabled={savingField === "text"}
+                              />
+                              <button
+                                type="button"
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
+                                onClick={() => {
+                                  setEnumerationDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
+                                  clearTextFeedback();
+                                }}
+                                disabled={savingField === "text"}
+                              >
+                                <TrashIcon className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
+                            onClick={() => {
+                              setEnumerationDraft((current) => [...current, { text: "" }]);
+                              clearTextFeedback();
+                            }}
+                            disabled={savingField === "text"}
+                          >
+                            Añadir elemento
+                          </button>
+                        </div>
+                      ) : (
+                        <textarea
+                          value={textDraft}
+                          onChange={(event) => {
+                            setTextDraft(event.target.value);
+                            clearTextFeedback();
+                          }}
+                          className="w-full rounded-control border border-brand-200 bg-white/25 px-3 py-2.5 text-body text-ink-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-70 resize-none min-h-[160px] max-h-[300px] overflow-y-scroll"
+                          aria-label={t("storage.detailDescription")}
+                          disabled={savingField === "text"}
+                        />
+                      )}
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
@@ -2072,9 +2404,65 @@ export function StorageEntriesSection({
                       </div>
                     </div>
                   ) : (
-                    <p className="break-all whitespace-pre-wrap text-sm text-ink-700">
-                      {buildEntryText(selectedEntry, t("entries.noContent"))}
-                    </p>
+                    <>
+                      {selectedEntry.flag === "TABLE" && selectedCsvTable ? (
+                        <div className="scrollbar-brand mt-2 max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
+                          <table className="w-max min-w-full border-collapse text-sm">
+                            <thead className="bg-brand-50">
+                              <tr>
+                                {selectedCsvTable.headers.map((header, index) => (
+                                  <th
+                                    key={`csv-h-${index}`}
+                                    className="max-w-[10rem] border-b border-brand-200 px-3 py-2 text-left font-semibold text-ink-800"
+                                  >
+                                    <span className="block max-w-[10rem] break-words whitespace-pre-wrap">
+                                      {header || `Col ${index + 1}`}
+                                    </span>
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selectedCsvTable.rows.map((row, rowIndex) => (
+                                <tr key={`csv-r-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
+                                  {row.map((cell, cellIndex) => (
+                                    <td
+                                      key={`csv-c-${rowIndex}-${cellIndex}`}
+                                      className="max-w-[10rem] border-b border-brand-100 px-3 py-2 text-ink-700"
+                                    >
+                                      <span className="block max-w-[10rem] break-words whitespace-pre-wrap">
+                                        {cell}
+                                      </span>
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : selectedEntry.flag === "CHECKLIST" && selectedTodoListText ? (
+                        <div className="scrollbar-brand mt-2 grid max-h-72 gap-2 overflow-y-auto pr-1">
+                          {renderTodoListMarkdown(selectedTodoListText)}
+                        </div>
+                      ) : selectedEntry.flag === "ENUMERATION" ? (
+                        selectedEnumerationItems.length > 0 ? (
+                          <div className="mt-2 grid gap-2">
+                            {selectedEnumerationItems.map((item, index) => (
+                              <div key={`enum-view-${index}`} className="flex items-start gap-2 px-1">
+                                <span className="mt-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
+                                <p className="break-all whitespace-pre-wrap text-sm text-ink-700">{item.text}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="break-all whitespace-pre-wrap text-sm text-ink-700">{t("entries.noContent")}</p>
+                        )
+                      ) : (
+                        <p className="break-all whitespace-pre-wrap text-sm text-ink-700">
+                          {buildEntryText(selectedEntry, t("entries.noContent"))}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
                 {editingField !== "text" && (
@@ -2088,71 +2476,6 @@ export function StorageEntriesSection({
                   </button>
                 )}
               </article>
-
-              {selectedEntry.flag === "TABLE" && selectedCsvTable && (
-                <article className="p-3" style={{ 
-                  background: 'rgba(255, 255, 255, 0.77)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  borderRadius: '16px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)'
-                }}>
-                  <div className="min-w-0 w-full">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                      {t("storage.detailTable")}
-                    </p>
-                    <div className="scrollbar-brand mt-2 max-h-72 overflow-auto rounded-control border border-brand-200">
-                      <table className="min-w-full border-collapse text-sm">
-                        <thead className="bg-brand-50">
-                          <tr>
-                            {selectedCsvTable.headers.map((header, index) => (
-                              <th
-                                key={`csv-h-${index}`}
-                                className="border-b border-brand-200 px-3 py-2 text-left font-semibold text-ink-800"
-                              >
-                                {header || `Col ${index + 1}`}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedCsvTable.rows.map((row, rowIndex) => (
-                            <tr key={`csv-r-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
-                              {row.map((cell, cellIndex) => (
-                                <td
-                                  key={`csv-c-${rowIndex}-${cellIndex}`}
-                                  className="border-b border-brand-100 px-3 py-2 text-ink-700"
-                                >
-                                  {cell}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </article>
-              )}
-
-              {selectedTodoListText && (
-                <article className="p-3" style={{ 
-                  background: 'rgba(255, 255, 255, 0.77)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  borderRadius: '16px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)'
-                }}>
-                  <div className="min-w-0 w-full">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                      {t("storage.detailTodoList")}
-                    </p>
-                    <div className="scrollbar-brand mt-2 grid max-h-72 gap-2 overflow-y-auto pr-1">
-                      {renderTodoListMarkdown(selectedTodoListText)}
-                    </div>
-                  </div>
-                </article>
-              )}
 
               {selectedEntryMedia.length > 0 && (
                 <article className="p-3" style={{ 

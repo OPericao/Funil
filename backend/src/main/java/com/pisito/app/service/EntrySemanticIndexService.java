@@ -30,15 +30,18 @@ public class EntrySemanticIndexService {
 
     private final EntryEmbeddingRepository entryEmbeddingRepository;
     private final OllamaEmbeddingService ollamaEmbeddingService;
+    private final EntryVectorStoreService entryVectorStoreService;
     private final ObjectMapper objectMapper;
 
     public EntrySemanticIndexService(
         EntryEmbeddingRepository entryEmbeddingRepository,
         OllamaEmbeddingService ollamaEmbeddingService,
+        EntryVectorStoreService entryVectorStoreService,
         ObjectMapper objectMapper
     ) {
         this.entryEmbeddingRepository = entryEmbeddingRepository;
         this.ollamaEmbeddingService = ollamaEmbeddingService;
+        this.entryVectorStoreService = entryVectorStoreService;
         this.objectMapper = objectMapper;
     }
 
@@ -65,7 +68,9 @@ public class EntrySemanticIndexService {
             EntryEmbedding current = existingEmbedding.get();
             if (contentHash.equals(current.getContentHash())
                 && ollamaEmbeddingService.getModel().equals(current.getEmbeddingModel())) {
-                return readEmbeddingVector(current.getEmbeddingJson());
+                Optional<double[]> storedVector = readEmbeddingVector(current.getEmbeddingJson());
+                storedVector.ifPresent(vector -> entryVectorStoreService.upsertEntryEmbedding(entry.getId(), vector));
+                return storedVector;
             }
         }
 
@@ -77,6 +82,7 @@ public class EntrySemanticIndexService {
             entryEmbedding.setEmbeddingModel(ollamaEmbeddingService.getModel());
             entryEmbedding.setEmbeddingJson(writeEmbeddingVector(vector));
             entryEmbeddingRepository.save(entryEmbedding);
+            entryVectorStoreService.upsertEntryEmbedding(entry.getId(), vector);
             return Optional.of(vector);
         } catch (Exception ex) {
             log.warn("Failed to index semantic embedding for entryId={}", entry.getId(), ex);

@@ -44,6 +44,11 @@ export type EntryItem = {
   updatedAt: string;
 };
 
+export type EntryMentionItem = {
+  id: number;
+  title: string;
+};
+
 export type FolderItem = {
   id: number;
   title: string;
@@ -142,6 +147,7 @@ export type ExploreSuggestions = {
 
 export type ExploreRecommendationItem = {
   type: "EXPLORE" | "OPTIMIZE";
+  kind: "DEEPEN" | "VARIANT" | "COMPLEMENT" | "NEXT" | "OPTIMIZE";
   title: string;
   description: string;
   suggestedQuestion: string;

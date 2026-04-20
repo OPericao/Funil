@@ -30,6 +30,7 @@ Recomendado para Supabase:
 - `CORS_ALLOWED_ORIGINS=https://tu-frontend.com`
 - `JWT_SECRET=<secreto_base64_o_texto_plano_de_32+_caracteres>`
 - `OLLAMA_EMBEDDING_MODEL=nomic-embed-text`
+- `OLLAMA_EMBEDDING_DIMENSIONS=768`
 
 Ejemplo para `backend/.env`:
 
@@ -59,6 +60,7 @@ Auth:
 - El resto de `/api/**` requiere `Authorization: Bearer <jwt>`.
 - Las `entries/resources` quedan aisladas por usuario autenticado.
 - La busqueda semantica usa Ollama local via `POST /api/embed`. Si el modelo de embeddings no esta disponible, la app cae a busqueda textual.
+- Si arrancas contra PostgreSQL/Supabase, el backend intenta habilitar `pgvector`, crear la columna vectorial en `entry_embeddings` y usarla para vecinos semanticos en recomendaciones.
 
 Si no configuras credenciales de Spotify, el backend igual guarda un link de busqueda en Spotify cuando detecta "cancion/canción" en el contenido de una nota.
 

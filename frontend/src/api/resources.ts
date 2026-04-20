@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   CreateEntryInput,
   EntryFolderItem,
+  EntryMentionItem,
   CreateLinkResourceInput,
   CreateMediaResourceInput,
   CreateTextResourceInput,
@@ -19,6 +20,10 @@ import type {
 
 export function fetchEntries() {
   return api<EntryItem[]>("/entries");
+}
+
+export function fetchEntryMentions() {
+  return api<EntryMentionItem[]>("/entries/mentions");
 }
 
 export function fetchEntryById(entryId: number) {

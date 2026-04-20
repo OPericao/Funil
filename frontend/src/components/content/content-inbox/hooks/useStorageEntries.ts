@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isApiError } from "../../../../api/client";
-import { fetchEntries, searchEntries } from "../../../../api/resources";
+import { fetchEntries, fetchEntryRelationships, searchEntries } from "../../../../api/resources";
+import type { EntryItem, EntryRelationshipItem } from "../../../../types/resource";
 import { useI18n } from "../../../../i18n/I18nProvider";
-import type { EntryItem } from "../../../../types/resource";
 import { readErrorMessage } from "../../../../utils/error";
 import type { InboxSection } from "../constants";
 
@@ -29,7 +29,9 @@ export function useStorageEntries({
   onUnauthorized
 }: UseStorageEntriesParams) {
   const { language, t } = useI18n();
+
   const [storageEntries, setStorageEntries] = useState<EntryItem[]>([]);
+  const [manualRelationships, setManualRelationships] = useState<EntryRelationshipItem[]>([]);
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [storageSearchValue, setStorageSearchValue] = useState("");
@@ -43,8 +45,13 @@ export function useStorageEntries({
       setStorageLoading(true);
       setStorageError(null);
 
-      const data = await fetchEntries();
-      setStorageEntries(dedupeEntries(data));
+      const [entriesData, relationshipsData] = await Promise.all([
+        fetchEntries(),
+        fetchEntryRelationships(),
+      ]);
+
+      setStorageEntries(dedupeEntries(entriesData));
+      setManualRelationships(relationshipsData ?? []);
     } catch (requestError) {
       if (isApiError(requestError) && requestError.status === 401) {
         onUnauthorized();
@@ -61,7 +68,17 @@ export function useStorageEntries({
     if (activeSection !== "storage") {
       return;
     }
+    void loadStorageEntries();
+  }, [activeSection, loadStorageEntries]);
 
+  useEffect(() => {
+    if (!notificationsOpen || storageEntries.length > 0) {
+      return;
+    }
+    void loadStorageEntries();
+  }, [loadStorageEntries, notificationsOpen, storageEntries.length]);
+
+  useEffect(() => {
     const query = storageSearchValue.trim();
     if (!query) {
       setStorageSearchResults(null);
@@ -71,55 +88,36 @@ export function useStorageEntries({
     }
 
     let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      void (async () => {
-        try {
-          setStorageSearchLoading(true);
-          setStorageSearchError(null);
-
-          const data = await searchEntries(query);
-          if (!cancelled) {
-            setStorageSearchResults(dedupeEntries(data));
-          }
-        } catch (requestError) {
-          if (isApiError(requestError) && requestError.status === 401) {
-            onUnauthorized();
-            return;
-          }
-
-          if (!cancelled) {
-            setStorageSearchResults(null);
-            setStorageSearchError(readErrorMessage(requestError, t("common.unexpectedError")));
-          }
-        } finally {
-          if (!cancelled) {
-            setStorageSearchLoading(false);
-          }
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setStorageSearchLoading(true);
+        setStorageSearchError(null);
+        const results = await searchEntries(query);
+        if (!cancelled) {
+          setStorageSearchResults(dedupeEntries(results));
         }
-      })();
-    }, 300);
+      } catch (requestError) {
+        if (isApiError(requestError) && requestError.status === 401) {
+          onUnauthorized();
+          return;
+        }
+
+        if (!cancelled) {
+          setStorageSearchResults([]);
+          setStorageSearchError(readErrorMessage(requestError, t("common.unexpectedError")));
+        }
+      } finally {
+        if (!cancelled) {
+          setStorageSearchLoading(false);
+        }
+      }
+    }, 250);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [activeSection, onUnauthorized, storageSearchValue, t]);
-
-  useEffect(() => {
-    if (activeSection !== "storage") {
-      return;
-    }
-
-    void loadStorageEntries();
-  }, [activeSection, loadStorageEntries]);
-
-  useEffect(() => {
-    if (!notificationsOpen || storageEntries.length > 0) {
-      return;
-    }
-
-    void loadStorageEntries();
-  }, [loadStorageEntries, notificationsOpen, storageEntries.length]);
+  }, [onUnauthorized, storageSearchValue, t]);
 
   const notificationEntries = useMemo(() => {
     return storageEntries
@@ -150,6 +148,7 @@ export function useStorageEntries({
 
   return {
     storageEntries,
+    manualRelationships,
     storageLoading,
     storageError,
     storageSearchValue,

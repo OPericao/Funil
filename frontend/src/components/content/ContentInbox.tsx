@@ -220,6 +220,7 @@ export function ContentInbox({
           onUnauthorized={onLogout}
           entryToOpenId={storage.entryToOpenFromNotifications}
           onEntryToOpenHandled={storage.handleEntryToOpenHandled}
+          manualRelationships={storage.manualRelationships}
         />
       );
     }

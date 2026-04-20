@@ -78,14 +78,21 @@ function RelationshipNode({ data, selected }: NodeProps<Node<GraphNodeData>>) {
         selected ? "ring-2 ring-teal-300" : ""
       }`}
     >
-      <Handle id="top-target" type="target" position={Position.Top} style={{ ...HANDLE_STYLE, top: -6 }} />
-      <Handle id="top-source" type="source" position={Position.Top} style={{ ...HANDLE_STYLE, top: -6, left: "58%" }} />
-      <Handle id="right-target" type="target" position={Position.Right} style={{ ...HANDLE_STYLE, right: -6 }} />
-      <Handle id="right-source" type="source" position={Position.Right} style={{ ...HANDLE_STYLE, right: -6, top: "58%" }} />
-      <Handle id="bottom-target" type="target" position={Position.Bottom} style={{ ...HANDLE_STYLE, bottom: -6 }} />
-      <Handle id="bottom-source" type="source" position={Position.Bottom} style={{ ...HANDLE_STYLE, bottom: -6, left: "58%" }} />
-      <Handle id="left-target" type="target" position={Position.Left} style={{ ...HANDLE_STYLE, left: -6 }} />
-      <Handle id="left-source" type="source" position={Position.Left} style={{ ...HANDLE_STYLE, left: -6, top: "58%" }} />
+      {/* TOP */}
+      <Handle id="top" type="source" position={Position.Top} style={{ ...HANDLE_STYLE, top: -6, zIndex: 2 }} />
+      <Handle id="top" type="target" position={Position.Top} style={{ ...HANDLE_STYLE, top: -6, zIndex: 1, opacity: 0 }} />
+
+      {/* RIGHT */}
+      <Handle id="right" type="source" position={Position.Right} style={{ ...HANDLE_STYLE, right: -6, zIndex: 2 }} />
+      <Handle id="right" type="target" position={Position.Right} style={{ ...HANDLE_STYLE, right: -6, zIndex: 1, opacity: 0 }} />
+
+      {/* BOTTOM */}
+      <Handle id="bottom" type="source" position={Position.Bottom} style={{ ...HANDLE_STYLE, bottom: -6, zIndex: 2 }} />
+      <Handle id="bottom" type="target" position={Position.Bottom} style={{ ...HANDLE_STYLE, bottom: -6, zIndex: 1, opacity: 0 }} />
+
+      {/* LEFT */}
+      <Handle id="left" type="source" position={Position.Left} style={{ ...HANDLE_STYLE, left: -6, zIndex: 2 }} />
+      <Handle id="left" type="target" position={Position.Left} style={{ ...HANDLE_STYLE, left: -6, zIndex: 1, opacity: 0 }} />
 
       <div className="pointer-events-none">
         <p className="line-clamp-2 break-words text-sm font-extrabold leading-snug text-slate-900">{data.label}</p>
@@ -115,7 +122,6 @@ function ManualRelationshipEdge({
   sourcePosition,
   targetPosition,
   style,
-  markerEnd,
   data,
 }: EdgeProps<Edge<GraphEdgeData>>) {
   const [edgePath] = getBezierPath({
@@ -132,7 +138,7 @@ function ManualRelationshipEdge({
 
   return (
     <>
-      <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+      <BaseEdge path={edgePath} style={style} />
       {data?.relationshipId && data.onDelete ? (
         <EdgeLabelRenderer>
           <div
@@ -288,7 +294,7 @@ function buildRelation(featuresLeft: EntryGraphFeatures, featuresRight: EntryGra
   return { score, reasons };
 }
 
-function buildGraphFromEntries(entries: EntryItem[], manualRelationships: EntryRelationshipItem[]) {
+export function buildGraphFromEntries(entries: EntryItem[], manualRelationships: EntryRelationshipItem[] = []) {
   const features = entries.map(toFeatures);
   const nodeStrength = new Map<number, number>();
   const candidateEdges: Edge<GraphEdgeData>[] = [];
@@ -374,10 +380,6 @@ function buildGraphFromEntries(entries: EntryItem[], manualRelationships: EntryR
         stroke: "#0f172a",
         strokeWidth: 3.4,
       },
-      markerEnd: {
-        type: "arrowclosed",
-        color: "#0f172a",
-      },
     });
   }
 
@@ -420,6 +422,29 @@ function buildGraphFromEntries(entries: EntryItem[], manualRelationships: EntryR
 
   const rootNode = [...nodes].sort((left, right) => (right.data.strength ?? 0) - (left.data.strength ?? 0))[0] ?? null;
   return { nodes, edges, rootId: rootNode?.id ?? null };
+}
+
+export function getRelatedEntryIds(
+  currentEntryId: number,
+  entries: EntryItem[],
+  manualRelationships: EntryRelationshipItem[] = []
+) {
+  const { edges } = buildGraphFromEntries(entries, manualRelationships);
+  const relatedIds = new Set<number>();
+
+  for (const edge of edges) {
+    const source = Number(edge.source);
+    const target = Number(edge.target);
+
+    if (source === currentEntryId) {
+      relatedIds.add(target);
+    }
+    if (target === currentEntryId) {
+      relatedIds.add(source);
+    }
+  }
+
+  return relatedIds;
 }
 
 function buildAdjacency(edges: Edge[]) {

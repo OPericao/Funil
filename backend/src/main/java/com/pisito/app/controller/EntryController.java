@@ -1,6 +1,7 @@
 package com.pisito.app.controller;
 
 import com.pisito.app.controller.dto.entry.CreateNoteRequest;
+import com.pisito.app.controller.dto.entry.EntryMentionResponse;
 import com.pisito.app.controller.dto.entry.EntryResponse;
 import com.pisito.app.controller.dto.entry.UpdateEntryRequest;
 import com.pisito.app.service.EntryService;
@@ -43,6 +44,11 @@ public class EntryController {
     @GetMapping("/search")
     public List<EntryResponse> search(Authentication authentication, @RequestParam("q") String query) {
         return entryService.search(currentUserId(authentication), query);
+    }
+
+    @GetMapping("/mentions")
+    public List<EntryMentionResponse> mentions(Authentication authentication) {
+        return entryService.findAllMentions(currentUserId(authentication));
     }
 
     @PostMapping

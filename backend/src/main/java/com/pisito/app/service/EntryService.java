@@ -1,6 +1,7 @@
 package com.pisito.app.service;
 
 import com.pisito.app.controller.dto.entry.CreateEntryResourceRequest;
+import com.pisito.app.controller.dto.entry.EntryMentionResponse;
 import com.pisito.app.controller.dto.entry.CreateNoteRequest;
 import com.pisito.app.controller.dto.entry.EntryResponse;
 import com.pisito.app.controller.dto.entry.UpdateEntryRequest;
@@ -37,6 +38,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -60,6 +62,7 @@ public class EntryService {
     private final EntryRelationshipService entryRelationshipService;
     private final UserRepository userRepository;
     private final EntrySemanticIndexService entrySemanticIndexService;
+    private final EntryVectorStoreService entryVectorStoreService;
     private final EntryProcessingService entryProcessingService;
     private final ObjectMapper objectMapper;
 
@@ -76,6 +79,7 @@ public class EntryService {
         EntryRelationshipService entryRelationshipService,
         UserRepository userRepository,
         EntrySemanticIndexService entrySemanticIndexService,
+        EntryVectorStoreService entryVectorStoreService,
         EntryProcessingService entryProcessingService,
         ObjectMapper objectMapper
     ) {
@@ -91,6 +95,7 @@ public class EntryService {
         this.entryRelationshipService = entryRelationshipService;
         this.userRepository = userRepository;
         this.entrySemanticIndexService = entrySemanticIndexService;
+        this.entryVectorStoreService = entryVectorStoreService;
         this.entryProcessingService = entryProcessingService;
         this.objectMapper = objectMapper;
     }
@@ -107,47 +112,31 @@ public class EntryService {
         return toEntryResponse(getEntryOrThrow(userId, entryId));
     }
 
+    @Transactional(readOnly = true)
+    public List<EntryMentionResponse> findAllMentions(Long userId) {
+        return entryRepository.findAllByUserIdOrderByCreateDateDesc(userId).stream()
+            .map(entry -> new EntryMentionResponse(entry.getId(), entry.getTitle()))
+            .toList();
+    }
+
     @Transactional
     public List<EntryResponse> search(Long userId, String rawQuery) {
         String query = trimRequired(rawQuery, "q is required");
         List<Entry> entries = entryRepository.findAllByUserIdOrderByCreateDateDesc(userId);
+        if (entries.isEmpty()) {
+            return List.of();
+        }
+
         Optional<double[]> queryEmbedding = generateQueryEmbedding(query);
-        List<SearchMatch> matches = entries.stream()
-            .map(entry -> toSearchMatch(entry, query, queryEmbedding))
-            .filter(match -> match.shouldInclude(queryEmbedding.isPresent()))
-            .sorted(
-                Comparator.comparingDouble(SearchMatch::hybridScore)
-                    .reversed()
-                    .thenComparing(SearchMatch::updatedAt, Comparator.reverseOrder())
-            )
-            .toList();
+        List<SearchMatch> matches = queryEmbedding.isPresent() && entryVectorStoreService.isReady()
+            ? searchWithPgvector(userId, query, entries, queryEmbedding.get())
+            : searchInMemory(entries, query, queryEmbedding);
 
         if (matches.isEmpty()) {
             return List.of();
         }
 
-        double bestHybridScore = matches.getFirst().hybridScore();
-        double bestSemanticScore = matches.getFirst().semanticScore();
-        boolean hasStrongLexicalMatch = matches.stream().anyMatch(match -> match.lexicalScore() >= 0.18d);
-        double relativeCutoff = queryEmbedding.isPresent()
-            ? Math.max(0.32d, bestHybridScore * 0.62d)
-            : 0.0d;
-
         return matches.stream()
-            .filter(match -> {
-                if (!queryEmbedding.isPresent()) {
-                    return true;
-                }
-
-                if (hasStrongLexicalMatch) {
-                    return match.lexicalScore() >= 0.18d || match.hybridScore() >= relativeCutoff;
-                }
-
-                double semanticCutoff = Math.max(0.56d, bestSemanticScore - 0.04d);
-                double hybridSemanticCutoff = Math.max(0.42d, bestHybridScore - 0.05d);
-                return match.semanticScore() >= semanticCutoff && match.hybridScore() >= hybridSemanticCutoff;
-            })
-            .limit(queryEmbedding.isPresent() && !hasStrongLexicalMatch ? 3 : 25)
             .collect(Collectors.toMap(
                 match -> match.entry().getId(),
                 match -> match,
@@ -157,6 +146,36 @@ public class EntryService {
             .values()
             .stream()
             .map(match -> toEntryResponse(match.entry()))
+            .toList();
+    }
+
+    @Transactional
+    public List<EntryResponse> findSemanticNeighbors(Long userId, Long entryId, int limit) {
+        if (entryId == null || limit <= 0) {
+            return List.of();
+        }
+
+        Entry sourceEntry = getEntryOrThrow(userId, entryId);
+        Optional<double[]> sourceEmbedding = entrySemanticIndexService.ensureEmbedding(sourceEntry);
+        if (sourceEmbedding.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> similarEntryIds = entryVectorStoreService.findNearestEntryIds(
+            userId,
+            sourceEmbedding.get(),
+            limit,
+            0.45d,
+            entryId
+        );
+        if (similarEntryIds.isEmpty()) {
+            return List.of();
+        }
+
+        return similarEntryIds.stream()
+            .map(similarEntryId -> entryRepository.findByIdAndUserId(similarEntryId, userId).orElse(null))
+            .filter(java.util.Objects::nonNull)
+            .map(this::toEntryResponse)
             .toList();
     }
 
@@ -410,9 +429,13 @@ public class EntryService {
         Entry entry = getEntryOrThrow(userId, entryId);
         entry.setTitle(trimRequired(request.getTitle(), "title is required"));
         entry.touch();
-        refreshProcessedData(entry);
+        if (!shouldSkipAiRefresh(entry)) {
+            refreshProcessedData(entry);
+        }
         Entry savedEntry = entryRepository.save(entry);
-        entrySemanticIndexService.indexEntry(savedEntry);
+        if (!shouldSkipAiRefresh(savedEntry)) {
+            entrySemanticIndexService.indexEntry(savedEntry);
+        }
         return toEntryResponse(savedEntry);
     }
 
@@ -464,8 +487,10 @@ public class EntryService {
         textResource.setTitle(trimOrNull(request.getTitle()));
         textResource.setTextContent(trimRequired(request.getTextContent(), "textContent is required"));
         parent.touch();
-        refreshProcessedData(parent);
-        entrySemanticIndexService.indexEntry(parent);
+        if (!shouldSkipAiRefresh(parent)) {
+            refreshProcessedData(parent);
+            entrySemanticIndexService.indexEntry(parent);
+        }
 
         return toResourceResponse(textResource);
     }
@@ -478,8 +503,10 @@ public class EntryService {
         }
         Entry parent = resource.getEntry();
         parent.removeResource(resource);
-        refreshProcessedData(parent);
-        entrySemanticIndexService.indexEntry(parent);
+        if (!shouldSkipAiRefresh(parent)) {
+            refreshProcessedData(parent);
+            entrySemanticIndexService.indexEntry(parent);
+        }
     }
 
     @Transactional
@@ -494,7 +521,9 @@ public class EntryService {
         Entry entry = getEntryOrThrow(userId, entryId);
         entry.addResource(resource);
         Resource savedResource = resourceRepository.save(resource);
-        entrySemanticIndexService.indexEntry(entry);
+        if (!shouldSkipAiRefresh(entry)) {
+            entrySemanticIndexService.indexEntry(entry);
+        }
         return toResourceResponse(savedResource);
     }
 
@@ -691,6 +720,180 @@ public class EntryService {
         }
     }
 
+    private List<SearchMatch> searchWithPgvector(Long userId, String query, List<Entry> entries, double[] queryEmbedding) {
+        List<EntryVectorStoreService.NeighborMatch> semanticCandidates = entryVectorStoreService.findNearestEntryMatches(
+            userId,
+            queryEmbedding,
+            40,
+            0.22d,
+            null
+        );
+        if (semanticCandidates.isEmpty()) {
+            return searchInMemory(entries, query, Optional.of(queryEmbedding));
+        }
+
+        Map<Long, Entry> entriesById = entries.stream()
+            .collect(Collectors.toMap(
+                Entry::getId,
+                entry -> entry,
+                (left, _right) -> left,
+                LinkedHashMap::new
+            ));
+        Map<Long, SearchMatch> matchesByEntryId = new LinkedHashMap<>();
+
+        for (EntryVectorStoreService.NeighborMatch candidate : semanticCandidates) {
+            Entry entry = entriesById.get(candidate.entryId());
+            if (entry == null) {
+                continue;
+            }
+            double lexicalScore = computeLexicalScore(query, entrySemanticIndexService.buildSearchDocument(entry), entry);
+            if (shouldRejectSemanticCandidate(entry, query, lexicalScore, candidate.similarity())) {
+                continue;
+            }
+            double hybridScore = blendSearchScores(lexicalScore, candidate.similarity(), query, entry);
+            SearchMatch match = new SearchMatch(entry, lexicalScore, candidate.similarity(), hybridScore);
+            if (match.shouldInclude(true)) {
+                matchesByEntryId.put(entry.getId(), match);
+            }
+        }
+
+        for (Entry entry : entries) {
+            if (matchesByEntryId.containsKey(entry.getId())) {
+                continue;
+            }
+
+            double lexicalScore = computeLexicalScore(query, entrySemanticIndexService.buildSearchDocument(entry), entry);
+            if (!isStrongLexicalCandidate(query, entry, lexicalScore)) {
+                continue;
+            }
+
+            SearchMatch match = new SearchMatch(
+                entry,
+                lexicalScore,
+                0.0d,
+                blendSearchScores(lexicalScore, 0.0d, query, entry)
+            );
+            if (match.shouldInclude(false)) {
+                matchesByEntryId.put(entry.getId(), match);
+            }
+        }
+
+        return rankMatches(matchesByEntryId.values().stream().toList(), true);
+    }
+
+    private List<SearchMatch> searchInMemory(List<Entry> entries, String query, Optional<double[]> queryEmbedding) {
+        List<SearchMatch> matches = entries.stream()
+            .map(entry -> toSearchMatch(entry, query, queryEmbedding))
+            .filter(match -> match.shouldInclude(queryEmbedding.isPresent()))
+            .toList();
+
+        return rankMatches(matches, queryEmbedding.isPresent());
+    }
+
+    private List<SearchMatch> rankMatches(List<SearchMatch> matches, boolean semanticEnabled) {
+        if (matches.isEmpty()) {
+            return List.of();
+        }
+
+        double bestHybridScore = matches.stream()
+            .mapToDouble(SearchMatch::hybridScore)
+            .max()
+            .orElse(0.0d);
+        double bestSemanticScore = matches.stream()
+            .mapToDouble(SearchMatch::semanticScore)
+            .max()
+            .orElse(0.0d);
+        boolean hasStrongLexicalMatch = matches.stream().anyMatch(match -> match.lexicalScore() >= 0.18d);
+        double relativeCutoff = semanticEnabled
+            ? Math.max(0.24d, bestHybridScore * 0.55d)
+            : 0.0d;
+
+        return matches.stream()
+            .filter(match -> {
+                if (!semanticEnabled) {
+                    return true;
+                }
+
+                if (hasStrongLexicalMatch) {
+                    return match.lexicalScore() >= 0.16d
+                        || match.semanticScore() >= Math.max(0.36d, bestSemanticScore - 0.08d)
+                        || match.hybridScore() >= relativeCutoff;
+                }
+
+                return match.semanticScore() >= Math.max(0.28d, bestSemanticScore - 0.10d)
+                    || match.hybridScore() >= relativeCutoff;
+            })
+            .sorted(
+                Comparator.comparingDouble(SearchMatch::hybridScore)
+                    .reversed()
+                    .thenComparing(SearchMatch::semanticScore, Comparator.reverseOrder())
+                    .thenComparing(SearchMatch::lexicalScore, Comparator.reverseOrder())
+                    .thenComparing(SearchMatch::updatedAt, Comparator.reverseOrder())
+            )
+            .limit(25)
+            .toList();
+    }
+
+    private double blendSearchScores(double lexicalScore, double semanticScore, String query, Entry entry) {
+        double hybridScore = semanticScore > 0.0d
+            ? (semanticScore * 0.72d) + (lexicalScore * 0.28d)
+            : lexicalScore;
+
+        String normalizedQuery = normalizeForSearch(query);
+        String normalizedTitle = normalizeForSearch(entry.getTitle());
+        String searchDocument = normalizeForSearch(entrySemanticIndexService.buildSearchDocument(entry));
+
+        if (StringUtils.hasText(normalizedQuery) && StringUtils.hasText(normalizedTitle) && normalizedTitle.contains(normalizedQuery)) {
+            hybridScore += 0.10d;
+        }
+        if (StringUtils.hasText(normalizedQuery) && StringUtils.hasText(searchDocument) && searchDocument.contains(normalizedQuery)) {
+            hybridScore += 0.04d;
+        }
+
+        return Math.min(1.0d, hybridScore);
+    }
+
+    private boolean isStrongLexicalCandidate(String query, Entry entry, double lexicalScore) {
+        if (lexicalScore >= 0.18d) {
+            return true;
+        }
+
+        String normalizedQuery = normalizeForSearch(query);
+        String normalizedTitle = normalizeForSearch(entry.getTitle());
+        return StringUtils.hasText(normalizedQuery)
+            && StringUtils.hasText(normalizedTitle)
+            && normalizedTitle.contains(normalizedQuery);
+    }
+
+    private boolean shouldRejectSemanticCandidate(Entry entry, String query, double lexicalScore, double semanticScore) {
+        if (entry == null || entry.getFlag() == null) {
+            return false;
+        }
+
+        if (entry.getFlag() != FlagEnum.TWITCH) {
+            return false;
+        }
+
+        if (lexicalScore >= 0.12d) {
+            return false;
+        }
+
+        String normalizedQuery = normalizeForSearch(query);
+        if (!StringUtils.hasText(normalizedQuery)) {
+            return false;
+        }
+
+        String normalizedDocument = normalizeForSearch(entrySemanticIndexService.buildSearchDocument(entry));
+        boolean hasDirectSupport = normalizedDocument.contains(normalizedQuery)
+            || tokenize(normalizedQuery).stream().anyMatch(token -> token.length() >= 4 && normalizedDocument.contains(token));
+
+        if (hasDirectSupport) {
+            return false;
+        }
+
+        return semanticScore < 0.68d;
+    }
+
     private SearchMatch toSearchMatch(Entry entry, String query, Optional<double[]> queryEmbedding) {
         String searchDocument = entrySemanticIndexService.buildSearchDocument(entry);
         double lexicalScore = computeLexicalScore(query, searchDocument, entry);
@@ -703,9 +906,11 @@ public class EntryService {
             }
         }
 
-        double hybridScore = queryEmbedding.isPresent()
-            ? (semanticScore * 0.75d) + (lexicalScore * 0.25d)
-            : lexicalScore;
+        if (queryEmbedding.isPresent() && shouldRejectSemanticCandidate(entry, query, lexicalScore, semanticScore)) {
+            semanticScore = 0.0d;
+        }
+
+        double hybridScore = blendSearchScores(lexicalScore, semanticScore, query, entry);
 
         return new SearchMatch(entry, lexicalScore, semanticScore, hybridScore);
     }
@@ -806,6 +1011,16 @@ public class EntryService {
         } catch (Exception ex) {
             log.warn("Failed to process entry insights for entryId={}", entry == null ? null : entry.getId(), ex);
         }
+    }
+
+    private boolean shouldSkipAiRefresh(Entry entry) {
+        if (entry == null || entry.getFlag() == null) {
+            return false;
+        }
+
+        return entry.getFlag() == FlagEnum.CHECKLIST
+            || entry.getFlag() == FlagEnum.TABLE
+            || entry.getFlag() == FlagEnum.ENUMERATION;
     }
 
     private String writeStringList(List<String> values) {

@@ -4,6 +4,7 @@ import java.util.List;
 
 public record ExploreRecommendationItemResponse(
     String type,
+    String kind,
     String title,
     String description,
     String suggestedQuestion,
