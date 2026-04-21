@@ -288,7 +288,7 @@ public class EntryService {
         List<String> uploadedFileNames = new ArrayList<>();
         for (CreateEntryResourceRequest resourceRequest : request.getResources()) {
             if ((youtubeFlag || twitchFlag) && isTextResourceType(resourceRequest.getType())) {
-                String rawText = trimOrNull(RichTextContentUtils.extractPlainText(resourceRequest.getTextContent()));
+                String rawText = trimOrNull(RichTextContentUtils.extractPlainTextWithLinks(resourceRequest.getTextContent()));
                 if (firstTextContent == null && StringUtils.hasText(rawText)) {
                     firstTextContent = rawText;
                 }
@@ -451,22 +451,6 @@ public class EntryService {
             });
         }
 
-        if (entry.getFlag() == FlagEnum.CHECKLIST) {
-            String checklistContext = allTextContent.isEmpty() ? title : allTextContent.toString();
-            if (StringUtils.hasText(checklistContext)) {
-                try {
-                    String todoList = ollamaTitleService.generateTodoList(checklistContext);
-                    TextResource checklistResource = new TextResource();
-                    checklistResource.setTitle("Checklist");
-                    checklistResource.setTextContent(todoList);
-                    entry.addResource(checklistResource);
-                    log.info("createEntry checklist generated for userId={}", userId);
-                } catch (Exception ex) {
-                    log.warn("createEntry checklist generation failed for userId={}", userId, ex);
-                }
-            }
-        }
-
         // Manejar tags - IA siempre sugiere basada en contenido
         List<Tag> allTags = tagRepository.findAll();
         List<String> existingTagNames = allTags.stream().map(Tag::getName).toList();
@@ -508,8 +492,8 @@ public class EntryService {
     public ResourceResponse addTextResource(Long userId, Long entryId, CreateTextResourceRequest request) {
         TextResource resource = new TextResource();
         resource.setTitle(trimOrNull(request.getTitle()));
-        resource.setTextContent(trimRequired(request.getTextContent(), "textContent is required"));
-        return saveResource(userId, entryId, resource);
+        resource.setTextContent(trimToEmpty(request.getTextContent()));
+        return saveResource(userId, entryId, resource, false);
     }
 
     @Transactional
@@ -550,13 +534,8 @@ public class EntryService {
         }
 
         textResource.setTitle(trimOrNull(request.getTitle()));
-        textResource.setTextContent(trimRequired(request.getTextContent(), "textContent is required"));
+        textResource.setTextContent(trimToEmpty(request.getTextContent()));
         parent.touch();
-        if (!shouldSkipAiRefresh(parent)) {
-            refreshProcessedData(parent);
-            entrySemanticIndexService.indexEntry(parent);
-        }
-
         return toResourceResponse(textResource);
     }
 
@@ -583,10 +562,14 @@ public class EntryService {
     }
 
     private ResourceResponse saveResource(Long userId, Long entryId, Resource resource) {
+        return saveResource(userId, entryId, resource, true);
+    }
+
+    private ResourceResponse saveResource(Long userId, Long entryId, Resource resource, boolean refreshAi) {
         Entry entry = getEntryOrThrow(userId, entryId);
         entry.addResource(resource);
         Resource savedResource = resourceRepository.save(resource);
-        if (!shouldSkipAiRefresh(entry)) {
+        if (refreshAi && !shouldSkipAiRefresh(entry)) {
             entrySemanticIndexService.indexEntry(entry);
         }
         return toResourceResponse(savedResource);
@@ -601,7 +584,7 @@ public class EntryService {
             case RAW -> {
                 TextResource resource = new TextResource();
                 resource.setTitle(trimOrNull(request.getTitle()));
-                resource.setTextContent(trimRequired(request.getTextContent(), "textContent is required for RAW"));
+                resource.setTextContent(trimToEmpty(request.getTextContent()));
                 yield resource;
             }
             case LINK -> {
@@ -740,6 +723,10 @@ public class EntryService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, errorMessage);
         }
         return value.trim();
+    }
+
+    private static String trimToEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private LinkResource buildLinkResource(String requestedTitle, String url) {
@@ -1751,9 +1738,7 @@ public class EntryService {
             return false;
         }
 
-        return entry.getFlag() == FlagEnum.CHECKLIST
-            || entry.getFlag() == FlagEnum.TABLE
-            || entry.getFlag() == FlagEnum.ENUMERATION;
+        return entry.getFlag() == FlagEnum.TABLE;
     }
 
     private String writeStringList(List<String> values) {

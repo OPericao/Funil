@@ -1,6 +1,6 @@
 package com.pisito.app.controller.dto.resource;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 public class CreateTextResourceRequest {
@@ -8,7 +8,7 @@ public class CreateTextResourceRequest {
     @Size(max = 120)
     private String title;
 
-    @NotBlank
+    @NotNull
     @Size(max = 4000)
     private String textContent;
 

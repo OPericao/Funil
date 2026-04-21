@@ -13,7 +13,7 @@ import type {
 } from "../../../types/resource";
 import { readErrorMessage } from "../../../utils/error";
 import { extractPlainTextFromStoredText } from "../../../utils/richText";
-import { BoltIcon, BookIcon, ChecklistIcon, LinkIcon, ListBulletIcon, MagnifyingGlassIcon, MusicalNoteIcon, RelationshipGraphIcon, TableIcon, TwitchIcon, YoutubeIcon } from "../../ui/icons";
+import { BoltIcon, BookIcon, LinkIcon, MagnifyingGlassIcon, MusicalNoteIcon, RelationshipGraphIcon, TableIcon, TwitchIcon, YoutubeIcon } from "../../ui/icons";
 
 type ExploreAssistantSectionProps = {
   onUnauthorized: () => void;
@@ -587,10 +587,8 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
       { key: "YOUTUBE", label: "YouTube", prompt: "Que videos de YouTube tengo guardados y por cual deberia empezar", icon: YoutubeIcon },
       { key: "TWITCH", label: "Twitch", prompt: "Que contenido de Twitch tengo guardado y que merece la pena revisar", icon: TwitchIcon },
       { key: "SPOTIFY", label: "Spotify", prompt: "Que tengo guardado de Spotify y como se relaciona con mis otras notas", icon: MusicalNoteIcon },
-      { key: "CHECKLIST", label: "Checklist", prompt: "Que checklists o tareas tengo guardadas ahora mismo", icon: ChecklistIcon },
       { key: "TABLE", label: "Tablas", prompt: "Que tablas tengo guardadas y cual me conviene revisar primero", icon: TableIcon },
-      { key: "LINK", label: "Links", prompt: "Que enlaces tengo guardados sobre mis temas principales", icon: LinkIcon },
-      { key: "ENUMERATION", label: "Listas", prompt: "Que listas o enumeraciones tengo guardadas y que ideas salen de ellas", icon: ListBulletIcon }
+      { key: "LINK", label: "Links", prompt: "Que enlaces tengo guardados sobre mis temas principales", icon: LinkIcon }
     ],
     []
   );

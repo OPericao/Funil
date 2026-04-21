@@ -11,9 +11,7 @@ export type EntryFlag =
   | "LINK"
   | "SPOTIFY"
   | "TWITCH"
-  | "TABLE"
-  | "ENUMERATION"
-  | "CHECKLIST";
+  | "TABLE";
 
 export type ResourceItem = {
   id: number;

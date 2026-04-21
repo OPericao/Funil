@@ -6,7 +6,5 @@ public enum FlagEnum {
     SPOTIFY,
     TWITCH,
     LINK,
-    TABLE,
-    ENUMERATION,
-    CHECKLIST,    
+    TABLE
 }

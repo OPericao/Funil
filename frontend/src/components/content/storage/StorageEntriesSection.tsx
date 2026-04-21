@@ -1,31 +1,23 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isApiError } from "../../../api/client";
 import {
-  createTextResource,
   createFolder,
   deleteEntry,
   fetchEntryFolders,
   fetchFolders,
-  updateEntryTitle,
-  updateEntryFolderSelection,
-  updateTextResource
+  updateEntryFolderSelection
 } from "../../../api/resources";
 import { useI18n } from "../../../i18n/I18nProvider";
 import type { EntryFolderItem, EntryItem, FolderItem, EntryRelationshipItem } from "../../../types/resource";
 import { readErrorMessage } from "../../../utils/error";
-import { extractPlainTextFromStoredText } from "../../../utils/richText";
+import { extractPlainTextFromStoredText, extractUrlsFromStoredText } from "../../../utils/richText";
 import GlassIcons from "../../ui/GlassIcons";
 import { errorTextClass, fieldLabelClass, inputClass } from "../../ui/styles";
 import { StorageTabIcon } from "../../ui/StorageTabIcon";
 import {
-  ArrowDownTrayIcon,
   ArrowLongLeftIcon,
-  ChecklistIcon,
   LinkIcon,
-  ListBulletIcon,
   MusicalNoteIcon,
-  PencilSquareIcon,
-  SuccessCheckCircleIcon,
   TableIcon,
   TextComponentIcon,
   TrashIcon,
@@ -37,7 +29,7 @@ import { CreateFolderModal } from "./CreateFolderModal";
 import { Portal } from "../../ui/Portal";
 import { HeroVideoDialog } from "../../ui/HeroVideoDialog";
 import { getRelatedEntryIds } from "../../../utils/relationshipGraph";
-import { EntryDetailContent } from "./EntryDetailContent";
+import { EntryDetailContent, type EntryDetailContentHandle } from "./EntryDetailContent";
 
 type StorageEntriesSectionProps = {
   entries: EntryItem[];
@@ -50,32 +42,16 @@ type StorageEntriesSectionProps = {
   searchError: string | null;
   onSearchChange: (value: string) => void;
   onEntriesUpdated: () => Promise<void> | void;
+  onEntryUpdated?: (entryId: number) => Promise<void> | void;
   onUnauthorized: () => void;
   entryToOpenId?: number | null;
   onEntryToOpenHandled?: () => void;
 };
 
-type EntryFlagFilter = "ALL" | "YOUTUBE" | "TWITCH" | "SPOTIFY" | "CHECKLIST" | "TABLE" | "LINK" | "ENUMERATION";
-type ChecklistDraftItem = { checked: boolean; text: string };
-type EnumerationDraftItem = { text: string };
-type EditableCsvTable = { delimiter: string; headers: string[]; rows: string[][] };
-
-const CHECKLIST_TITLES = new Set(["checklist", "todo list", "todolist", "todo"]);
+type EntryFlagFilter = "ALL" | "YOUTUBE" | "TWITCH" | "SPOTIFY" | "TABLE" | "LINK";
 
 function TodoFilterStorageIcon({ className }: { className?: string }) {
   return <StorageTabIcon className={className} scale={0.18} />;
-}
-
-function isChecklistResource(resource: EntryItem["resources"][number]) {
-  if (resource.type !== "RAW") {
-    return false;
-  }
-  const title = (resource.title ?? "").trim().toLowerCase();
-  return CHECKLIST_TITLES.has(title);
-}
-
-function shouldOpenTextEditorByDefault(entry: EntryItem | null) {
-  return entry?.flag === "CHECKLIST" || entry?.flag === "ENUMERATION";
 }
 
 function buildEntrySearchableText(entry: EntryItem) {
@@ -116,27 +92,14 @@ function normalizeForSearch(value: string) {
 }
 
 function buildEntryText(entry: EntryItem, emptyText: string) {
-  if (entry.flag === "CHECKLIST") {
-    const todoItems = parseChecklistDraft(buildEntryTodoListText(entry) ?? "");
-    return todoItems.length > 0 ? `${todoItems.length} tareas` : emptyText;
-  }
-
   if (entry.flag === "TABLE") {
-    const tableResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
+    const tableResource = entry.resources.find((resource) => resource.type === "RAW");
     const table = parseCsvTable(extractPlainTextFromStoredText(tableResource?.textContent).trim());
     return table ? `${table.rows.length} filas · ${table.headers.length} columnas` : "Tabla";
   }
 
-  if (entry.flag === "ENUMERATION") {
-    const listResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
-    const items = parseEnumerationDraft(extractPlainTextFromStoredText(listResource?.textContent));
-    return items.length > 0 ? `${items.length} elementos` : "Lista";
-  }
-
   const textResources = entry.resources
-    .filter(
-      (resource) =>
-        (resource.type === "RAW" && !isChecklistResource(resource)))
+    .filter((resource) => resource.type === "RAW")
     .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
     .filter(Boolean);
 
@@ -159,18 +122,6 @@ function buildEntryText(entry: EntryItem, emptyText: string) {
   }
 
   return emptyText;
-}
-
-function buildEntryTodoListText(entry: EntryItem): string | null {
-  const todoResources = entry.resources
-    .filter((resource) => isChecklistResource(resource))
-    .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
-    .filter(Boolean);
-
-  if (todoResources.length === 0) {
-    return null;
-  }
-  return todoResources.join("\n\n");
 }
 
 function parseCsvLine(line: string, delimiter: string): string[] {
@@ -248,189 +199,6 @@ function parseCsvTable(text: string): { headers: string[]; rows: string[][] } | 
   const [headers, ...rows] = normalized;
   return { headers, rows };
 }
-
-function renderTodoListMarkdown(markdown: string): ReactNode {
-  const lines = markdown.split(/\r?\n/);
-
-  return lines.map((rawLine, index) => {
-    const line = rawLine.trim();
-
-    if (!line) {
-      return <div key={`spacer-${index}`} className="h-1" />;
-    }
-
-    if (line.startsWith("## ")) {
-      return (
-        <h4 key={`h2-${index}`} className="text-sm font-extrabold tracking-wide text-ink-900">
-          {line.slice(3).trim()}
-        </h4>
-      );
-    }
-
-    if (line.startsWith("### ")) {
-      return (
-        <h5 key={`h3-${index}`} className="text-xs font-bold uppercase tracking-wide text-ink-600">
-          {line.slice(4).trim()}
-        </h5>
-      );
-    }
-
-    if (line.startsWith("- [ ] ") || line.startsWith("- [x] ") || line.startsWith("- [X] ")) {
-      const checked = line.startsWith("- [x] ") || line.startsWith("- [X] ");
-      const content = line.slice(6).trim();
-      return (
-        <div key={`task-${index}`} className="flex items-start gap-2 rounded-control border border-[#F0F0F0] bg-brand-50 px-2.5 py-1.5">
-          <span
-            className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-              checked ? "border-brand-500 bg-brand-500 text-white" : "border-brand-300 bg-white/25 text-transparent"
-            }`}
-            aria-hidden="true"
-          >
-            ✓
-          </span>
-          <p className="break-all whitespace-pre-wrap text-sm text-ink-800">{content}</p>
-        </div>
-      );
-    }
-
-    if (line.startsWith("- ")) {
-      return (
-        <div key={`bullet-${index}`} className="flex items-start gap-2 px-1">
-          <span className="mt-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
-          <p className="break-all whitespace-pre-wrap text-sm text-ink-700">{line.slice(2).trim()}</p>
-        </div>
-      );
-    }
-
-    return (
-      <p key={`p-${index}`} className="break-all whitespace-pre-wrap text-sm text-ink-700">
-        {line}
-      </p>
-    );
-  });
-}
-
-function parseChecklistDraft(text: string): ChecklistDraftItem[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      if (line.startsWith("- [x] ") || line.startsWith("- [X] ")) {
-        return { checked: true, text: line.slice(6).trim() };
-      }
-      if (line.startsWith("- [ ] ")) {
-        return { checked: false, text: line.slice(6).trim() };
-      }
-      if (line.startsWith("- ")) {
-        return { checked: false, text: line.slice(2).trim() };
-      }
-      return { checked: false, text: line.replace(/^\d+[.)]\s+/, "").trim() };
-    })
-    .filter((item) => item.text.length > 0);
-}
-
-function serializeChecklistDraft(items: ChecklistDraftItem[]): string {
-  return items
-    .filter((item) => item.text.trim().length > 0)
-    .map((item) => `- [${item.checked ? "x" : " "}] ${item.text.trim()}`)
-    .join("\n");
-}
-
-function splitEnumerationSegments(line: string): string[] {
-  const trimmed = line.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  const explicitListItem = trimmed.match(/^([-*]\s+|\d+[.)]\s+)(.+)$/);
-  if (explicitListItem) {
-    const content = explicitListItem[2].trim();
-    return content ? [content] : [];
-  }
-
-  return trimmed
-    .split(/\s*(?:[,;|]|\s·\s)\s*/g)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-}
-
-function parseEnumerationDraft(text: string): EnumerationDraftItem[] {
-  return text
-    .split(/\r?\n/)
-    .flatMap((line) => splitEnumerationSegments(line))
-    .map((itemText) => ({ text: itemText }))
-    .filter((item) => item.text.length > 0);
-}
-
-function serializeEnumerationDraft(items: EnumerationDraftItem[]): string {
-  return items
-    .map((item) => item.text.trim())
-    .filter(Boolean)
-    .map((text) => `- ${text}`)
-    .join("\n");
-}
-
-function buildDefaultEditableTable(): EditableCsvTable {
-  return {
-    delimiter: ",",
-    headers: ["Col 1", "Col 2"],
-    rows: [["", ""]]
-  };
-}
-
-function parseEditableCsvTable(text: string): EditableCsvTable {
-  const parsed = parseCsvTable(text);
-  if (!parsed) {
-    return buildDefaultEditableTable();
-  }
-
-  return {
-    delimiter: detectCsvDelimiter(text),
-    headers: parsed.headers.length > 0 ? parsed.headers : buildDefaultEditableTable().headers,
-    rows: parsed.rows.length > 0 ? parsed.rows : [Array(parsed.headers.length).fill("")]
-  };
-}
-
-function escapeCsvCell(value: string, delimiter: string): string {
-  const normalized = value ?? "";
-  if (normalized.includes('"')) {
-    return `"${normalized.replace(/"/g, '""')}"`;
-  }
-  if (normalized.includes(delimiter) || normalized.includes("\n")) {
-    return `"${normalized}"`;
-  }
-  return normalized;
-}
-
-function serializeEditableCsvTable(table: EditableCsvTable): string {
-  const delimiter = table.delimiter || ",";
-  const width = Math.max(
-    1,
-    table.headers.length,
-    ...table.rows.map((row) => row.length)
-  );
-  const headers = [...table.headers, ...Array(Math.max(0, width - table.headers.length)).fill("")].slice(0, width);
-  const rows = table.rows.map((row) => [...row, ...Array(Math.max(0, width - row.length)).fill("")].slice(0, width));
-
-  return [headers, ...rows]
-    .map((row) => row.map((cell) => escapeCsvCell(cell, delimiter)).join(delimiter))
-    .join("\n");
-}
-
-function getEntryLinks(entry: EntryItem) {
-  return entry.resources
-    .filter((resource) => resource.type === "LINK" && Boolean(resource.url))
-    .map((resource) => ({
-      id: resource.id,
-      title: resource.title?.trim() || resource.siteName?.trim() || resource.url!,
-      url: resource.url!,
-      description: resource.description?.trim() || resource.contentPreview?.trim() || null,
-      siteName: resource.siteName?.trim() || null
-    }));
-}
-
-const TWITCH_URL_PATTERN = /(?:https?:\/\/)?(?:www\.|m\.)?(?:twitch\.tv|clips\.twitch\.tv)\/[^\s<>"')]+/gi;
 
 type YouTubeVideoPreview = {
   id: number;
@@ -676,12 +444,7 @@ function getEntryTwitchVideos(entry: EntryItem): TwitchVideoPreview[] {
     }
 
     if ((resource.type === "RAW") && resource.textContent) {
-      const matches = extractPlainTextFromStoredText(resource.textContent).match(TWITCH_URL_PATTERN);
-      if (!matches) {
-        continue;
-      }
-
-      for (const candidateUrl of matches) {
+      for (const candidateUrl of extractUrlsFromStoredText(resource.textContent)) {
         const parsed = parseTwitchVideoPreview(candidateUrl);
         if (!parsed || videosByEmbed.has(parsed.embedUrl)) {
           continue;
@@ -727,20 +490,6 @@ function resolveMediaUrl(path: string | null): string | null {
   return `/${trimmed}`;
 }
 
-function getEntryMedia(entry: EntryItem) {
-  return entry.resources
-    .filter((resource) => resource.type === "MEDIA")
-    .map((resource) => ({
-      id: resource.id,
-      title: resource.title?.trim() || resource.fileName || "Archivo",
-      fileName: resource.fileName || "archivo",
-      mimeType: resource.mimeType || "",
-      url: resolveMediaUrl(resource.storageKey)
-    }))
-    .filter((media) => Boolean(media.url));
-}
-
-
 export function StorageEntriesSection({
   entries,
   manualRelationships = [],
@@ -752,6 +501,7 @@ export function StorageEntriesSection({
   searchError,
   onSearchChange,
   onEntriesUpdated,
+  onEntryUpdated,
   onUnauthorized,
   entryToOpenId = null,
   onEntryToOpenHandled
@@ -775,15 +525,6 @@ export function StorageEntriesSection({
   const [entryFoldersError, setEntryFoldersError] = useState<string | null>(null);
   const [entryFoldersOpen, setEntryFoldersOpen] = useState(false);
   const [updatingFolderId, setUpdatingFolderId] = useState<number | null>(null);
-  const [editingField, setEditingField] = useState<"title" | "text" | null>(null);
-  const [titleDraft, setTitleDraft] = useState("");
-  const [textDraft, setTextDraft] = useState("");
-  const [checklistDraft, setChecklistDraft] = useState<ChecklistDraftItem[]>([]);
-  const [enumerationDraft, setEnumerationDraft] = useState<EnumerationDraftItem[]>([]);
-  const [tableDraft, setTableDraft] = useState<EditableCsvTable>(buildDefaultEditableTable());
-  const [savingField, setSavingField] = useState<"title" | "text" | null>(null);
-  const [detailSaveError, setDetailSaveError] = useState<string | null>(null);
-  const [detailSaveSuccess, setDetailSaveSuccess] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<number | null>(null);
   const [deletingEntry, setDeletingEntry] = useState(false);
@@ -796,6 +537,7 @@ export function StorageEntriesSection({
 
   const entryFoldersMenuRef = useRef<HTMLDivElement | null>(null);
   const carouselTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const entryDetailContentRef = useRef<EntryDetailContentHandle | null>(null);
 
   const filteredEntries = useMemo(() => {
     const query = searchValue.trim();
@@ -814,10 +556,8 @@ export function StorageEntriesSection({
       { key: "YOUTUBE" as const, label: "YouTube", icon: YoutubeIcon },
       { key: "TWITCH" as const, label: "Twitch", icon: TwitchIcon },
       { key: "SPOTIFY" as const, label: "Spotify", icon: MusicalNoteIcon },
-      { key: "CHECKLIST" as const, label: "Checklist", icon: ChecklistIcon },
       { key: "TABLE" as const, label: "Tablas", icon: TableIcon },
-      { key: "LINK" as const, label: "Links", icon: LinkIcon },
-      { key: "ENUMERATION" as const, label: "Listas", icon: ListBulletIcon }
+      { key: "LINK" as const, label: "Links", icon: LinkIcon }
     ],
     []
   );
@@ -831,10 +571,8 @@ export function StorageEntriesSection({
           YOUTUBE: "red",
           TWITCH: "purple",
           SPOTIFY: "green",
-          CHECKLIST: "orange",
           TABLE: "blue",
-          LINK: "indigo",
-          ENUMERATION: "purple"
+          LINK: "indigo"
         };
 
         return {
@@ -891,90 +629,6 @@ export function StorageEntriesSection({
     setSelectedEntryId(targetEntry.id);
     onEntryToOpenHandled?.();
   }, [entries, entryToOpenId, loading, onEntryToOpenHandled]);
-  const selectedEntryLinks = useMemo(
-    () => (selectedEntry ? getEntryLinks(selectedEntry) : []),
-    [selectedEntry]
-  );
-  const selectedEntryYoutubeVideos = useMemo(
-    () => (selectedEntry ? getEntryYoutubeVideos(selectedEntry) : []),
-    [selectedEntry]
-  );
-  const selectedEntryTwitchVideos = useMemo(
-    () => (selectedEntry ? getEntryTwitchVideos(selectedEntry) : []),
-    [selectedEntry]
-  );
-  const selectedEntryOtherLinks = useMemo(
-    () =>
-      selectedEntryLinks.filter(
-        (link) => !extractYoutubeVideoId(link.url) && !parseTwitchVideoPreview(link.url)
-      ),
-    [selectedEntryLinks]
-  );
-  const selectedEntryMedia = useMemo(
-    () => (selectedEntry ? getEntryMedia(selectedEntry) : []),
-    [selectedEntry]
-  );
-
-  const selectedTextResource = useMemo(() => {
-    if (!selectedEntry) {
-      return null;
-    }
-    return (
-      selectedEntry.resources.find(
-        (resource) =>
-        (resource.type === "RAW" && !isChecklistResource(resource))) ?? null
-    );
-  }, [selectedEntry]);
-
-  const selectedChecklistResource = useMemo(() => {
-    if (!selectedEntry) {
-      return null;
-    }
-    return selectedEntry.resources.find((resource) => isChecklistResource(resource)) ?? null;
-  }, [selectedEntry]);
-  const selectedEditableTextResource = useMemo(() => {
-    if (!selectedEntry) {
-      return null;
-    }
-    if (selectedEntry.flag === "CHECKLIST") {
-      return selectedChecklistResource;
-    }
-    return selectedTextResource;
-  }, [selectedChecklistResource, selectedEntry, selectedTextResource]);
-
-  const selectedTextResourceStableId = selectedEditableTextResource?.id ?? null;
-  const selectedTodoListText = useMemo(() => {
-    if (selectedEntry?.flag !== "CHECKLIST") {
-      return null;
-    }
-    return extractPlainTextFromStoredText(selectedChecklistResource?.textContent).trim() || null;
-  }, [selectedChecklistResource, selectedEntry]);
-
-  const selectedCsvTable = useMemo(() => {
-    if (!selectedEntry || selectedEntry.flag !== "TABLE") {
-      return null;
-    }
-    const rawText = extractPlainTextFromStoredText(selectedEditableTextResource?.textContent).trim();
-    if (!rawText) {
-      return null;
-    }
-    return parseCsvTable(rawText);
-  }, [selectedEditableTextResource, selectedEntry]);
-
-  const selectedEnumerationItems = useMemo(() => {
-    if (selectedEntry?.flag !== "ENUMERATION") {
-      return [];
-    }
-    return parseEnumerationDraft(extractPlainTextFromStoredText(selectedEditableTextResource?.textContent));
-  }, [selectedEditableTextResource, selectedEntry]);
-  const textDetailLabel = selectedEntry?.flag === "TABLE"
-    ? t("storage.detailTable")
-    : selectedEntry?.flag === "CHECKLIST"
-      ? t("storage.detailTodoList")
-      : selectedEntry?.flag === "ENUMERATION"
-        ? t("icon.enumeration")
-        : t("storage.detailDescription");
-
   const relatedEntries = useMemo(() => {
     if (!selectedEntry) {
       return [];
@@ -1147,14 +801,6 @@ export function StorageEntriesSection({
       setEntryFoldersOpen(false);
       setEntryFolders([]);
       setEntryFoldersError(null);
-      setEditingField(null);
-      setTitleDraft("");
-      setTextDraft("");
-      setChecklistDraft([]);
-      setEnumerationDraft([]);
-      setTableDraft(buildDefaultEditableTable());
-      setDetailSaveError(null);
-      setDetailSaveSuccess(null);
       setDeleteConfirmOpen(false);
       setDeletingEntry(false);
       setDeleteEntryError(null);
@@ -1164,18 +810,7 @@ export function StorageEntriesSection({
       setForcedRightEntryId(null);
       return;
     }
-
-    setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
-    setTitleDraft(selectedEntry.title);
-    const baseText = extractPlainTextFromStoredText(selectedEditableTextResource?.textContent);
-    setTextDraft(baseText);
-    setChecklistDraft(parseChecklistDraft(baseText));
-    setEnumerationDraft(parseEnumerationDraft(baseText));
-    setTableDraft(parseEditableCsvTable(baseText));
-    setDetailSaveError(null);
-    setDetailSaveSuccess(null);
-  }, [selectedEntryStableId, selectedTextResourceStableId]);
-
+  }, [selectedEntryStableId]);
   useEffect(() => {
     setSelectedEntryId(null);
     setEntryFoldersOpen(false);
@@ -1203,17 +838,22 @@ export function StorageEntriesSection({
           setDeleteEntryError(null);
           return;
         }
-        setSelectedEntryId(null);
-        setSelectedFolder(null);
-        setEntryFoldersOpen(false);
-        setCreateFolderModalOpen(false);
-        setFoldersViewActive(false);
+        void (async () => {
+          const closed = await closeSelectedEntry();
+          if (!closed) {
+            return;
+          }
+          setSelectedFolder(null);
+          setEntryFoldersOpen(false);
+          setCreateFolderModalOpen(false);
+          setFoldersViewActive(false);
+        })();
       }
     }
 
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [createFolderModalOpen, deleteConfirmOpen, entryFoldersOpen, selectedEntryId]);
+  }, [closeSelectedEntry, createFolderModalOpen, deleteConfirmOpen, entryFoldersOpen, selectedEntryId]);
 
   useEffect(() => {
     if (!entryFoldersOpen) {
@@ -1406,153 +1046,29 @@ export function StorageEntriesSection({
     }
   }
 
-  function startEditingField(field: "title" | "text") {
-    setEditingField(field);
-    setDetailSaveError(null);
-    setDetailSaveSuccess(null);
-  }
-
-  function cancelEditingField() {
-    if (!selectedEntry) {
-      setEditingField(null);
-      return;
-    }
-    setTitleDraft(selectedEntry.title);
-    const baseText = extractPlainTextFromStoredText(selectedEditableTextResource?.textContent);
-    setTextDraft(baseText);
-    setChecklistDraft(parseChecklistDraft(baseText));
-    setEnumerationDraft(parseEnumerationDraft(baseText));
-    setTableDraft(parseEditableCsvTable(baseText));
-    setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
-    setDetailSaveError(null);
-  }
-
-  function clearTextFeedback() {
-    if (detailSaveError) {
-      setDetailSaveError(null);
-    }
-    if (detailSaveSuccess) {
-      setDetailSaveSuccess(null);
-    }
-  }
-
-  function updateChecklistItem(index: number, patch: Partial<ChecklistDraftItem>) {
-    setChecklistDraft((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
-    clearTextFeedback();
-  }
-
-  function updateEnumerationItem(index: number, text: string) {
-    setEnumerationDraft((current) => current.map((item, itemIndex) => (itemIndex === index ? { text } : item)));
-    clearTextFeedback();
-  }
-
-  function updateTableHeader(index: number, value: string) {
-    setTableDraft((current) => ({
-      ...current,
-      headers: current.headers.map((header, headerIndex) => (headerIndex === index ? value : header))
-    }));
-    clearTextFeedback();
-  }
-
-  function updateTableCell(rowIndex: number, cellIndex: number, value: string) {
-    setTableDraft((current) => ({
-      ...current,
-      rows: current.rows.map((row, currentRowIndex) =>
-        currentRowIndex === rowIndex ? row.map((cell, currentCellIndex) => (currentCellIndex === cellIndex ? value : cell)) : row
-      )
-    }));
-    clearTextFeedback();
-  }
-
-  async function saveTitleChanges() {
-    if (!selectedEntry) {
-      return;
-    }
-
-    const nextTitle = titleDraft.trim();
-    if (!nextTitle) {
-      setDetailSaveError(t("inbox.titleRequired"));
-      return;
-    }
-
-    try {
-      setSavingField("title");
-      setDetailSaveError(null);
-      setDetailSaveSuccess(null);
-
-      await updateEntryTitle(selectedEntry.id, nextTitle);
-      await onEntriesUpdated();
-
-      setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
-      setDetailSaveSuccess(t("storage.detailSaved"));
-    } catch (requestError) {
-      if (isApiError(requestError) && requestError.status === 401) {
-        onUnauthorized();
-        return;
+  async function closeSelectedEntry() {
+    if (entryDetailContentRef.current) {
+      const saved = await entryDetailContentRef.current.saveTextChanges();
+      if (!saved) {
+        return false;
       }
-      setDetailSaveError(readErrorMessage(requestError, t("common.unexpectedError")));
-    } finally {
-      setSavingField(null);
     }
+
+    setForcedLeftEntryId(null);
+    setForcedRightEntryId(null);
+    setSelectedEntryId(null);
+    return true;
   }
 
-  async function saveTextChanges() {
-    if (!selectedEntry) {
-      return;
-    }
-
-    const nextText = (() => {
-      if (selectedEntry.flag === "CHECKLIST") {
-        return serializeChecklistDraft(checklistDraft).trim();
-      }
-      if (selectedEntry.flag === "TABLE") {
-        return serializeEditableCsvTable(tableDraft).trim();
-      }
-      if (selectedEntry.flag === "ENUMERATION") {
-        return serializeEnumerationDraft(enumerationDraft).trim();
-      }
-      return textDraft.trim();
-    })();
-    if (!nextText) {
-      setDetailSaveError(t("entries.textRequired"));
-      return;
-    }
-
-    try {
-      setSavingField("text");
-      setDetailSaveError(null);
-      setDetailSaveSuccess(null);
-
-      if (selectedEditableTextResource) {
-        await updateTextResource(selectedEntry.id, selectedEditableTextResource.id, {
-          title: selectedEditableTextResource.title ?? undefined,
-          textContent: nextText
-        });
-      } else {
-        await createTextResource(selectedEntry.id, {
-          title: selectedEntry.flag === "CHECKLIST" ? "Checklist" : undefined,
-          textContent: nextText
-        });
-      }
-
-      await onEntriesUpdated();
-
-      setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
-      setDetailSaveSuccess(t("storage.detailSaved"));
-    } catch (requestError) {
-      if (isApiError(requestError) && requestError.status === 401) {
-        onUnauthorized();
-        return;
-      }
-      setDetailSaveError(readErrorMessage(requestError, t("common.unexpectedError")));
-    } finally {
-      setSavingField(null);
-    }
-  }
-
-  function openRelatedEntry(entry: EntryItem, direction: "left" | "right") {
+  async function openRelatedEntry(entry: EntryItem, direction: "left" | "right") {
     if (selectedEntryId === entry.id || carouselSliding) {
       return;
+    }
+    if (entryDetailContentRef.current) {
+      const saved = await entryDetailContentRef.current.saveTextChanges();
+      if (!saved) {
+        return;
+      }
     }
 
     const currentCenterId = selectedEntryId;
@@ -1621,7 +1137,7 @@ export function StorageEntriesSection({
                   ? "bg-[linear-gradient(180deg,rgba(247,248,250,0.82)_0%,rgba(232,236,241,0.62)_100%)] hover:-translate-y-0.5 hover:shadow-lg"
                   : "bg-[linear-gradient(180deg,rgba(249,250,252,0.72)_0%,rgba(235,239,244,0.52)_100%)] hover:-translate-y-0.5 hover:shadow-md"
               }`}
-              onClick={() => openRelatedEntry(entry, side)}
+              onClick={() => void openRelatedEntry(entry, side)}
               aria-label={t("storage.openRelatedAria", { title: entry.title })}
               disabled={carouselSliding}
             >
@@ -2053,9 +1569,7 @@ export function StorageEntriesSection({
             aria-label={t("storage.detailTitle")}
             onClick={(event) => {
               if (event.target === event.currentTarget) {
-                setForcedLeftEntryId(null);
-                setForcedRightEntryId(null);
-                setSelectedEntryId(null);
+                void closeSelectedEntry();
               }
             }}
           >
@@ -2087,11 +1601,7 @@ export function StorageEntriesSection({
                   type="button"
                   className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/80 bg-[linear-gradient(180deg,rgba(255,247,242,0.92)_0%,rgba(255,233,236,0.84)_100%)] text-rose-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-rose-300 hover:bg-rose-50"
                   aria-label={t("storage.closeDetailAria")}
-                  onClick={() => {
-                    setForcedLeftEntryId(null);
-                    setForcedRightEntryId(null);
-                    setSelectedEntryId(null);
-                  }}
+                  onClick={() => void closeSelectedEntry()}
                 >
                   <XMarkIcon className="h-5 w-5" />
                 </button>
@@ -2144,686 +1654,13 @@ export function StorageEntriesSection({
 
               <div className="scrollbar-brand min-h-0 overflow-y-auto pr-1">
                 <EntryDetailContent
+                  ref={entryDetailContentRef}
                   entry={selectedEntry}
                   onEntriesUpdated={onEntriesUpdated}
+                  onEntryUpdated={onEntryUpdated}
                   onUnauthorized={onUnauthorized}
                 />
               </div>
-              {/*
-              <article className="hidden">
-                <div className="min-w-0 w-full">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                    {t("storage.detailEntryTitle")}
-                  </p>
-                  {editingField === "title" ? (
-                    <div className="mt-2 grid gap-2">
-                      <input
-                        type="text"
-                        value={titleDraft}
-                        onChange={(event) => {
-                          setTitleDraft(event.target.value);
-                          if (detailSaveError) {
-                            setDetailSaveError(null);
-                          }
-                          if (detailSaveSuccess) {
-                            setDetailSaveSuccess(null);
-                          }
-                        }}
-                        className={inputClass}
-                        aria-label={t("storage.detailEntryTitle")}
-                        disabled={savingField === "title"}
-                      />
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                          onClick={cancelEditingField}
-                          disabled={savingField === "title"}
-                        >
-                          {t("common.cancel")}
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex h-9 items-center justify-center rounded-control border border-brand-500 bg-brand-500 px-3 text-sm font-semibold text-white transition hover:bg-brand-600"
-                          onClick={() => void saveTitleChanges()}
-                          disabled={savingField === "title"}
-                        >
-                          {savingField === "title" ? t("common.saving") : t("common.save")}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="break-all whitespace-pre-wrap text-base font-normal text-ink-900">
-                      {selectedEntry.title}
-                    </p>
-                  )}
-                </div>
-                {editingField !== "title" && (
-                  <button
-                    type="button"
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                    aria-label={t("storage.editFieldAria")}
-                    onClick={() => startEditingField("title")}
-                  >
-                    <PencilSquareIcon className="h-5 w-5" />
-                  </button>
-                )}
-              </article>
-
-              <article className="flex min-w-0 items-start justify-between gap-3 overflow-hidden p-3" style={{ 
-                background: 'rgba(255, 255, 255, 0.77)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                borderRadius: '16px',
-                border: '1px solid rgba(255, 255, 255, 0.3)'
-              }}>
-                <div className="min-w-0 w-full overflow-hidden">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                    {textDetailLabel}
-                  </p>
-                  {editingField === "text" ? (
-                    <div className="mt-2 grid gap-2">
-                      {selectedEntry.flag === "CHECKLIST" ? (
-                        <div className="grid gap-3">
-                          <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
-                            {checklistDraft.map((item, index) => (
-                              <div
-                                key={`checklist-edit-${index}`}
-                                className={`flex items-center gap-3 rounded-[18px] border px-3 py-2.5 shadow-sm transition ${
-                                  item.checked
-                                    ? "border-emerald-200 bg-emerald-50/80"
-                                    : "border-brand-200 bg-white/65"
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => updateChecklistItem(index, { checked: !item.checked })}
-                                  disabled={savingField === "text"}
-                                  aria-pressed={item.checked}
-                                  aria-label={item.checked ? "Marcar tarea como pendiente" : "Marcar tarea como hecha"}
-                                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition ${
-                                    item.checked
-                                      ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
-                                      : "border-brand-300 bg-white text-brand-400 hover:border-brand-400 hover:text-brand-600"
-                                  }`}
-                                >
-                                  <SuccessCheckCircleIcon className="h-5 w-5" />
-                                </button>
-                                <input
-                                  type="text"
-                                  value={item.text}
-                                  onChange={(event) => updateChecklistItem(index, { text: event.target.value })}
-                                  className={`min-w-0 flex-1 rounded-[14px] border px-3 py-2 text-sm outline-none transition ${
-                                    item.checked
-                                      ? "border-emerald-200 bg-white/80 text-ink-700 line-through placeholder:text-emerald-300 focus:border-emerald-400"
-                                      : "border-brand-200 bg-white text-ink-800 focus:border-brand-500"
-                                  }`}
-                                  disabled={savingField === "text"}
-                                  placeholder={`Tarea ${index + 1}`}
-                                />
-                                <button
-                                  type="button"
-                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-500 transition hover:border-rose-300 hover:bg-rose-50"
-                                  onClick={() => {
-                                    setChecklistDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                                    clearTextFeedback();
-                                  }}
-                                  disabled={savingField === "text"}
-                                >
-                                  <TrashIcon className="h-4 w-4" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                          <button
-                            type="button"
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-brand-300 bg-white px-4 text-sm font-semibold text-ink-800 shadow-sm transition hover:-translate-y-0.5 hover:bg-brand-50"
-                            onClick={() => {
-                              setChecklistDraft((current) => [...current, { checked: false, text: "" }]);
-                              clearTextFeedback();
-                            }}
-                            disabled={savingField === "text"}
-                          >
-                            Añadir tarea
-                          </button>
-                        </div>
-                      ) : selectedEntry.flag === "TABLE" ? (
-                        <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
-                          <div className="scrollbar-brand max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
-                            <table className="w-max min-w-full border-collapse text-sm">
-                              <thead className="bg-brand-50">
-                                <tr>
-                                  {tableDraft.headers.map((header, index) => (
-                                    <th key={`table-edit-h-${index}`} className="border-b border-brand-200 px-2 py-2 align-top">
-                                      <div className="flex min-w-0 items-center gap-2">
-                                        <input
-                                          type="text"
-                                          value={header}
-                                          onChange={(event) => updateTableHeader(index, event.target.value)}
-                                          className="w-[8rem] min-w-[8rem] max-w-[10rem] rounded-control border border-brand-200 bg-white px-2 py-1 text-sm text-ink-800 outline-none focus:border-brand-500"
-                                          disabled={savingField === "text"}
-                                        />
-                                        <button
-                                          type="button"
-                                          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                                          onClick={() => {
-                                            setTableDraft((current) => {
-                                              if (current.headers.length <= 1) {
-                                                return current;
-                                              }
-                                              return {
-                                                ...current,
-                                                headers: current.headers.filter((_, headerIndex) => headerIndex !== index),
-                                                rows: current.rows.map((row) => row.filter((_, cellIndex) => cellIndex !== index))
-                                              };
-                                            });
-                                            clearTextFeedback();
-                                          }}
-                                          disabled={savingField === "text" || tableDraft.headers.length <= 1}
-                                        >
-                                          <XMarkIcon className="h-4 w-4" />
-                                        </button>
-                                      </div>
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {tableDraft.rows.map((row, rowIndex) => (
-                                  <tr key={`table-edit-row-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
-                                    {row.map((cell, cellIndex) => (
-                                      <td key={`table-edit-cell-${rowIndex}-${cellIndex}`} className="border-b border-brand-100 px-2 py-2">
-                                        <input
-                                          type="text"
-                                          value={cell}
-                                          onChange={(event) => updateTableCell(rowIndex, cellIndex, event.target.value)}
-                                          className="w-[8rem] min-w-[8rem] max-w-[10rem] rounded-control border border-brand-200 bg-white px-2 py-1 text-sm text-ink-800 outline-none focus:border-brand-500"
-                                          disabled={savingField === "text"}
-                                        />
-                                      </td>
-                                    ))}
-                                    <td className="border-b border-brand-100 px-2 py-2">
-                                      <button
-                                        type="button"
-                                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                                        onClick={() => {
-                                          setTableDraft((current) => ({
-                                            ...current,
-                                            rows: current.rows.filter((_, currentRowIndex) => currentRowIndex !== rowIndex)
-                                          }));
-                                          clearTextFeedback();
-                                        }}
-                                        disabled={savingField === "text"}
-                                      >
-                                        <TrashIcon className="h-4 w-4" />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                              onClick={() => {
-                                setTableDraft((current) => ({
-                                  ...current,
-                                  headers: [...current.headers, `Col ${current.headers.length + 1}`],
-                                  rows: current.rows.map((row) => [...row, ""])
-                                }));
-                                clearTextFeedback();
-                              }}
-                              disabled={savingField === "text"}
-                            >
-                              Añadir columna
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                              onClick={() => {
-                                setTableDraft((current) => ({
-                                  ...current,
-                                  rows: [...current.rows, Array(Math.max(1, current.headers.length)).fill("")]
-                                }));
-                                clearTextFeedback();
-                              }}
-                              disabled={savingField === "text"}
-                            >
-                              Añadir fila
-                            </button>
-                          </div>
-                        </div>
-                      ) : selectedEntry.flag === "ENUMERATION" ? (
-                        <div className="grid gap-3">
-                          <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
-                            {enumerationDraft.map((item, index) => (
-                              <div
-                                key={`enum-edit-${index}`}
-                                className="flex items-center gap-3 rounded-[18px] border border-violet-200 bg-violet-50/60 px-3 py-2.5 shadow-sm"
-                              >
-                                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
-                                  {index + 1}
-                                </span>
-                                <input
-                                  type="text"
-                                  value={item.text}
-                                  onChange={(event) => updateEnumerationItem(index, event.target.value)}
-                                  className="min-w-0 flex-1 rounded-[14px] border border-violet-200 bg-white px-3 py-2 text-sm text-ink-800 outline-none transition focus:border-violet-400"
-                                  disabled={savingField === "text"}
-                                  placeholder={`Elemento ${index + 1}`}
-                                />
-                                <button
-                                  type="button"
-                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-500 transition hover:border-rose-300 hover:bg-rose-50"
-                                  onClick={() => {
-                                    setEnumerationDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                                    clearTextFeedback();
-                                  }}
-                                  disabled={savingField === "text"}
-                                >
-                                  <TrashIcon className="h-4 w-4" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                          <button
-                            type="button"
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-violet-300 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:-translate-y-0.5 hover:bg-violet-50"
-                            onClick={() => {
-                              setEnumerationDraft((current) => [...current, { text: "" }]);
-                              clearTextFeedback();
-                            }}
-                            disabled={savingField === "text"}
-                          >
-                            Añadir elemento
-                          </button>
-                        </div>
-                      ) : (
-                        <textarea
-                          value={textDraft}
-                          onChange={(event) => {
-                            setTextDraft(event.target.value);
-                            clearTextFeedback();
-                          }}
-                          className="w-full rounded-control border border-brand-200 bg-white/25 px-3 py-2.5 text-body text-ink-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-70 resize-none min-h-[160px] max-h-[300px] overflow-y-scroll"
-                          aria-label={t("storage.detailDescription")}
-                          disabled={savingField === "text"}
-                        />
-                      )}
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                          onClick={cancelEditingField}
-                          disabled={savingField === "text"}
-                        >
-                          {t("common.cancel")}
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex h-9 items-center justify-center rounded-control border border-brand-500 bg-brand-500 px-3 text-sm font-semibold text-white transition hover:bg-brand-600"
-                          onClick={() => void saveTextChanges()}
-                          disabled={savingField === "text"}
-                        >
-                          {savingField === "text" ? t("common.saving") : t("common.save")}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {selectedEntry.flag === "TABLE" && selectedCsvTable ? (
-                        <div className="scrollbar-brand mt-2 max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
-                          <table className="w-max min-w-full border-collapse text-sm">
-                            <thead className="bg-brand-50">
-                              <tr>
-                                {selectedCsvTable.headers.map((header, index) => (
-                                  <th
-                                    key={`csv-h-${index}`}
-                                    className="max-w-[10rem] border-b border-brand-200 px-3 py-2 text-left font-semibold text-ink-800"
-                                  >
-                                    <span className="block max-w-[10rem] break-words whitespace-pre-wrap">
-                                      {header || `Col ${index + 1}`}
-                                    </span>
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {selectedCsvTable.rows.map((row, rowIndex) => (
-                                <tr key={`csv-r-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
-                                  {row.map((cell, cellIndex) => (
-                                    <td
-                                      key={`csv-c-${rowIndex}-${cellIndex}`}
-                                      className="max-w-[10rem] border-b border-brand-100 px-3 py-2 text-ink-700"
-                                    >
-                                      <span className="block max-w-[10rem] break-words whitespace-pre-wrap">
-                                        {cell}
-                                      </span>
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : selectedEntry.flag === "CHECKLIST" && selectedTodoListText ? (
-                        <div className="scrollbar-brand mt-2 grid max-h-72 gap-2 overflow-y-auto pr-1">
-                          {renderTodoListMarkdown(selectedTodoListText)}
-                        </div>
-                      ) : selectedEntry.flag === "ENUMERATION" ? (
-                        selectedEnumerationItems.length > 0 ? (
-                          <div className="scrollbar-brand mt-2 grid max-h-72 gap-3 overflow-y-auto pr-1">
-                            {selectedEnumerationItems.map((item, index) => (
-                              <div
-                                key={`enum-view-${index}`}
-                                className="flex items-start gap-3 rounded-[18px] border border-violet-200 bg-violet-50/60 px-3 py-2.5 shadow-sm"
-                              >
-                                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
-                                  {index + 1}
-                                </span>
-                                <p className="break-all whitespace-pre-wrap pt-1 text-sm text-ink-700">{item.text}</p>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="break-all whitespace-pre-wrap text-sm text-ink-700">{t("entries.noContent")}</p>
-                        )
-                      ) : (
-                        <p className="break-all whitespace-pre-wrap text-sm text-ink-700">
-                          {buildEntryText(selectedEntry, t("entries.noContent"))}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-                {editingField !== "text" && !shouldOpenTextEditorByDefault(selectedEntry) && (
-                  <button
-                    type="button"
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                    aria-label={t("storage.editFieldAria")}
-                    onClick={() => startEditingField("text")}
-                  >
-                    <PencilSquareIcon className="h-5 w-5" />
-                  </button>
-                )}
-              </article>
-
-              {selectedEntryMedia.length > 0 && (
-                <article className="p-3" style={{ 
-                  background: 'rgba(255, 255, 255, 0.77)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  borderRadius: '16px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)'
-                }}>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                    {t("storage.detailAttachments")}
-                  </p>
-                  <div className="mt-2 grid max-h-72 grid-cols-1 gap-2 overflow-y-auto pr-1">
-                    {selectedEntryMedia.map((media) => {
-                      const mime = media.mimeType.toLowerCase();
-                      const isImage = mime.startsWith("image/");
-                      const isVideo = mime.startsWith("video/");
-                      const isAudio = mime.startsWith("audio/");
-                      const isPdf = mime === "application/pdf";
-                      const downloadName = media.fileName || "archivo";
-
-                      return (
-                        <div key={media.id} className="relative rounded-control border border-brand-200 bg-brand-50 p-2">
-                          <a
-                            href={media.url!}
-                            download={downloadName}
-                            aria-label={`Descargar ${downloadName}`}
-                            title="Descargar"
-                            className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-300 bg-white/25 text-brand-700 shadow-sm transition hover:bg-brand-100"
-                          >
-                            <ArrowDownTrayIcon className="h-4 w-4" />
-                          </a>
-                          <p className="mb-1 truncate text-xs font-semibold text-ink-800">{media.title}</p>
-
-                          {isImage && (
-                            <img
-                              src={media.url!}
-                              alt={media.fileName}
-                              className="h-24 w-full rounded border border-brand-200 object-cover"
-                            />
-                          )}
-                          {isVideo && (
-                            <video src={media.url!} controls className="h-24 w-full rounded border border-brand-200 object-cover" />
-                          )}
-                          {isAudio && <audio src={media.url!} controls className="w-full" />}
-                          {isPdf && (
-                            <iframe src={media.url!} title={media.fileName} className="h-32 w-full rounded border border-brand-200" />
-                          )}
-                          {!isImage && !isVideo && !isAudio && !isPdf && (
-                            <a
-                              href={media.url!}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex h-9 items-center rounded-control border border-brand-300 bg-white/25 px-3 text-xs font-semibold text-brand-700 hover:bg-brand-100"
-                            >
-                              {media.fileName}
-                            </a>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </article>
-              )}
-
-              {selectedEntryYoutubeVideos.length > 0 && (
-                <article className="p-3" style={{ 
-                  background: 'rgba(255, 255, 255, 0.77)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  borderRadius: '16px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)'
-                }}>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                    {t("storage.youtubeVideos")}
-                  </p>
-                  <div className="scrollbar-brand mt-2 grid max-h-96 gap-3 overflow-y-auto pr-1">
-                    {selectedEntryYoutubeVideos.map((video) => (
-                      <div key={`${video.id}-${video.videoId}`} className="grid gap-2">
-                        {(() => {
-                          const badge = getYouTubeTypeBadgeConfig(video.isShort);
-                          return <span className={badge.className}>{badge.label}</span>;
-                        })()}
-
-                        <div className={video.isShort ? "flex justify-center" : ""}>
-                          <div className={video.isShort ? "w-full max-w-[180px]" : "w-full max-w-[320px]"}>
-                            <HeroVideoDialog
-                              animationStyle="from-center"
-                              videoSrc={video.embedUrl}
-                              thumbnailSrc={getYoutubeThumbnail(video.videoId)}
-                              thumbnailAlt={video.title}
-                              title={video.title}
-                              aspectRatio={video.isShort ? "short" : "video"}
-                            />
-                          </div>
-                        </div>
-
-                        <a
-                          href={video.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="break-all text-sm font-semibold text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-800"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {video.title}
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-              )}
-
-            {selectedEntryTwitchVideos.length > 0 && (
-              <article className="p-3" style={{ 
-                background: 'rgba(255, 255, 255, 0.77)',
-                backdropFilter: 'blur(10px)',
-                WebkitBackdropFilter: 'blur(10px)',
-                borderRadius: '16px',
-                border: '1px solid rgba(255, 255, 255, 0.3)'
-              }}>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                  {t("storage.twitchVideos")}
-                </p>
-                <div className="scrollbar-brand mt-2 grid max-h-96 gap-3 overflow-y-auto pr-1">
-                  {selectedEntryTwitchVideos.map((video) => (
-                    <div key={`${video.id}-${video.embedUrl}`} className="grid gap-2">
-                      {(() => {
-                        const badge = getTwitchVariantBadgeConfig(video.variant);
-                        return <span className={badge.className}>{t(badge.labelKey)}</span>;
-                      })()}
-
-                      <div className="w-full max-w-[320px]">
-                        <HeroVideoDialog
-                          animationStyle="from-center"
-                          videoSrc={video.embedUrl}
-                          title={video.title}
-                          aspectRatio="video"
-                          triggerContent={
-                            <div
-                              className={`relative aspect-video overflow-hidden rounded-control border ${
-                                video.variant === "live"
-                                  ? "border-rose-200 bg-rose-50"
-                                  : video.variant === "vod"
-                                    ? "border-indigo-200 bg-indigo-50"
-                                    : "border-amber-200 bg-amber-50"
-                              }`}
-                            >
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/30 backdrop-blur-md">
-                                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 shadow-md">
-                                    <TwitchIcon className="h-5 w-5 text-violet-700" />
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          }
-                        />
-                      </div>
-
-                      <a
-                        href={video.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="break-all text-sm font-semibold text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-800"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {video.title}
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            )}
-
-              {selectedEntryOtherLinks.length > 0 && (
-                <article className="p-3" style={{ 
-                  background: 'rgba(255, 255, 255, 0.77)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  borderRadius: '16px',
-                  border: '1px solid rgba(255, 255, 255, 0.3)'
-                }}>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                    {t("storage.detailLinks")}
-                  </p>
-                  <div className="mt-2 grid gap-2">
-                    {selectedEntryOtherLinks.map((link) => {
-                      return (
-                        <a
-                          key={link.id}
-                          href={link.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="break-all text-sm font-semibold text-brand-700 underline decoration-brand-300 underline-offset-2 hover:text-brand-800"
-                        >
-                          {link.title}
-                        </a>
-                      );
-                    })}
-                  </div>
-                </article>
-              )}
-                {(selectedEntry.processingCategory || selectedEntry.keyIdeas.length > 0 || selectedEntry.actions.length > 0) && (
-                  <article className="p-3" style={{ 
-                    background: 'rgba(255, 255, 255, 0.77)',
-                    backdropFilter: 'blur(10px)',
-                    WebkitBackdropFilter: 'blur(10px)',
-                    borderRadius: '16px',
-                    border: '1px solid rgba(255, 255, 255, 0.3)'
-                  }}>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                      Procesado
-                    </p>
-                    {selectedEntry.processingCategory ? (
-                      <div className="mt-2">
-                        <span className="inline-flex items-center rounded-full bg-violet-100 px-2.5 py-1 text-sm font-semibold text-violet-800 shadow-sm">
-                          {selectedEntry.processingCategory}
-                        </span>
-                      </div>
-                    ) : null}
-                    {selectedEntry.keyIdeas.length > 0 ? (
-                      <div className="mt-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Ideas clave</p>
-                        <div className="mt-2 grid gap-2">
-                          {selectedEntry.keyIdeas.map((idea) => (
-                            <p key={idea} className="rounded-control bg-violet-50 px-3 py-2 text-sm text-ink-800">
-                              {idea}
-                            </p>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selectedEntry.actions.length > 0 ? (
-                      <div className="mt-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">Acciones</p>
-                        <div className="mt-2 grid gap-2">
-                          {selectedEntry.actions.map((action) => (
-                            <p key={action} className="rounded-control bg-rose-50 px-3 py-2 text-sm text-ink-800">
-                              {action}
-                            </p>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </article>
-                )}
-                {selectedEntry.tags && selectedEntry.tags.length > 0 && (
-                  <article className="p-3" style={{ 
-                    background: 'rgba(255, 255, 255, 0.77)',
-                    backdropFilter: 'blur(10px)',
-                    WebkitBackdropFilter: 'blur(10px)',
-                    borderRadius: '16px',
-                    border: '1px solid rgba(255, 255, 255, 0.3)'
-                  }}>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-                      {t("storage.tags")}
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {selectedEntry.tags.map((tag) => (
-                        <span 
-                          key={tag.id} 
-                          className="inline-flex items-center rounded-full bg-brand-500 px-2.5 py-1 text-sm font-semibold text-white shadow-sm"
-                        >
-                          #{tag.name}
-                        </span>
-                      ))}
-                    </div>
-                  </article>
-                )}
-                {detailSaveError && <p className={errorTextClass}>{t("common.errorPrefix", { message: detailSaveError })}</p>}
-                {detailSaveSuccess && (
-                  <p className="text-sm font-semibold text-emerald-600">{detailSaveSuccess}</p>
-                )}
-              </article>
-              */}
             </section>
 
             {renderRelatedStack(rightRelatedEntries, "right", rightCardScaleClass, t("storage.relatedRight"))}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Background,
   BaseEdge,
@@ -26,12 +26,13 @@ import "@xyflow/react/dist/style.css";
 import {
   createEntryRelationship,
   deleteEntryRelationship,
+  fetchEntryById,
   fetchEntries,
   fetchEntryRelationships,
 } from "../../../api/resources";
 import type { EntryItem, EntryRelationshipItem, ResourceItem } from "../../../types/resource";
 import { extractPlainTextFromStoredText } from "../../../utils/richText";
-import { EntryDetailContent } from "../storage/EntryDetailContent";
+import { EntryDetailContent, type EntryDetailContentHandle } from "../storage/EntryDetailContent";
 
 type GraphNodeData = {
   label: string;
@@ -56,38 +57,6 @@ type EntryGraphFeatures = {
   resourceTypes: Set<string>;
   tokens: Set<string>;
 };
-
-function isChecklistResource(resource: ResourceItem) {
-  const label = `${resource.title ?? ""} ${resource.fileName ?? ""}`.toLowerCase();
-  return label.includes("checklist") || label.includes("todo") || label.includes("task");
-}
-
-function buildRelationshipEntryText(entry: EntryItem) {
-  const textResources = entry.resources
-    .filter((resource) => resource.type === "RAW" && !isChecklistResource(resource))
-    .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
-    .filter(Boolean);
-
-  if (textResources.length > 0) {
-    return textResources.join("\n\n");
-  }
-
-  for (const resource of entry.resources) {
-    const preview =
-      extractPlainTextFromStoredText(resource.textContent)
-      ?? resource.description
-      ?? resource.contentPreview
-      ?? resource.url
-      ?? resource.fileName
-      ?? resource.title
-      ?? resource.siteName;
-    if (preview) {
-      return preview;
-    }
-  }
-
-  return "Sin contenido";
-}
 
 const HANDLE_STYLE: CSSProperties = {
   width: 12,
@@ -553,6 +522,7 @@ export function RelationshipGraph() {
   const [manualRelationships, setManualRelationships] = useState<EntryRelationshipItem[]>([]);
   const [rf, setRf] = useState<ReactFlowInstance<Node<GraphNodeData>, Edge<GraphEdgeData>> | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
+  const entryDetailContentRef = useRef<EntryDetailContentHandle | null>(null);
 
   const nodeTypes = useMemo(() => ({ relationshipNode: RelationshipNode }), []);
   const handleDeleteManualRelationship = useCallback((relationshipId: number) => {
@@ -569,6 +539,10 @@ export function RelationshipGraph() {
   const refreshEntries = useCallback(async () => {
     const entriesData = await fetchEntries();
     setEntries(entriesData);
+  }, []);
+  const refreshEntry = useCallback(async (entryId: number) => {
+    const updatedEntry = await fetchEntryById(entryId);
+    setEntries((current) => current.map((entry) => (entry.id === updatedEntry.id ? updatedEntry : entry)));
   }, []);
 
   useEffect(() => {
@@ -662,6 +636,16 @@ export function RelationshipGraph() {
     () => (selectedEntryId === null ? null : entries.find((entry) => entry.id === selectedEntryId) ?? null),
     [entries, selectedEntryId]
   );
+
+  async function closeSelectedEntry() {
+    if (entryDetailContentRef.current) {
+      const saved = await entryDetailContentRef.current.saveTextChanges();
+      if (!saved) {
+        return;
+      }
+    }
+    setSelectedEntryId(null);
+  }
 
   useEffect(() => {
     if (!rf || nodes.length === 0) {
@@ -774,7 +758,7 @@ export function RelationshipGraph() {
           className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/28 p-4 backdrop-blur-sm"
           onClick={(event) => {
             if (event.target === event.currentTarget) {
-              setSelectedEntryId(null);
+              void closeSelectedEntry();
             }
           }}
         >
@@ -791,41 +775,22 @@ export function RelationshipGraph() {
                 type="button"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-600 shadow-sm transition hover:bg-slate-100"
                 aria-label="Cerrar detalle"
-                onClick={() => setSelectedEntryId(null)}
+                onClick={() => void closeSelectedEntry()}
               >
                 ×
               </button>
             </div>
             <div className="scrollbar-brand mt-5 max-h-[calc(100vh-11rem)] overflow-y-auto pr-1">
               <EntryDetailContent
+                ref={entryDetailContentRef}
                 entry={selectedEntry}
                 onEntriesUpdated={refreshEntries}
+                onEntryUpdated={refreshEntry}
                 onUnauthorized={() => {
                   window.location.reload();
                 }}
               />
             </div>
-
-            {/*
-            {selectedEntry.tags.length > 0 ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {selectedEntry.tags.map((tag) => (
-                  <span
-                    key={`detail-tag-${tag.id}`}
-                    className="inline-flex rounded-full border border-slate-200 bg-white/78 px-2.5 py-1 text-xs font-semibold text-slate-700"
-                  >
-                    {tag.name}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="mt-5 rounded-[22px] border border-white/85 bg-[linear-gradient(180deg,rgba(252,250,246,0.94)_0%,rgba(239,244,249,0.9)_100%)] p-4 shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
-              <p className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">
-                {buildRelationshipEntryText(selectedEntry)}
-              </p>
-            </div>
-            */}
           </section>
         </div>
       ) : null}

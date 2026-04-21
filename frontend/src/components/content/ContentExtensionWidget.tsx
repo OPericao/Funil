@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { isApiError } from "../../api/client";
 import { createEntry, uploadFile } from "../../api/resources";
 import { useI18n } from "../../i18n/I18nProvider";
-import type { CreateEntryResourceInput, EntryFlag } from "../../types/resource";
+import type { CreateEntryResourceInput } from "../../types/resource";
 import { readErrorMessage } from "../../utils/error";
 import { serializeRichTextPayload, supportsRichTextEntryFlag } from "../../utils/richText";
 import { SuccessToast } from "../ui/SuccessToast";
@@ -20,15 +20,13 @@ const INITIAL_INBOX_ENTRY_FORM: InboxEntryFormValues = {
   alarmEnabled: false
 };
 
-function resolveEntryFlag(form: InboxEntryFormValues): EntryFlag {
+function resolveEntryFlag(form: InboxEntryFormValues) {
   switch (form.selectedPrimaryOption) {
     case "youtube": return "YOUTUBE";
     case "spotify": return "SPOTIFY";
     case "twitch": return "TWITCH";
     case "link": return "LINK";
     case "table": return "TABLE";
-    case "enumeration": return "ENUMERATION";
-    case "checklist": return "CHECKLIST";
     default: return "RAW";
   }
 }

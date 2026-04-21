@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isApiError } from "../../../../api/client";
-import { fetchEntries, fetchEntryRelationships, searchEntries } from "../../../../api/resources";
+import { fetchEntries, fetchEntryById, fetchEntryRelationships, searchEntries } from "../../../../api/resources";
 import type { EntryItem, EntryRelationshipItem } from "../../../../types/resource";
 import { useI18n } from "../../../../i18n/I18nProvider";
 import { readErrorMessage } from "../../../../utils/error";
@@ -171,6 +171,22 @@ export function useStorageEntries({
     setEntryToOpenFromNotifications(null);
   }, []);
 
+  const refreshStorageEntry = useCallback(async (entryId: number) => {
+    try {
+      const updatedEntry = await fetchEntryById(entryId);
+      setStorageEntries((current) => current.map((entry) => (entry.id === updatedEntry.id ? updatedEntry : entry)));
+      setStorageSearchResults((current) =>
+        current === null ? null : current.map((entry) => (entry.id === updatedEntry.id ? updatedEntry : entry))
+      );
+    } catch (requestError) {
+      if (isApiError(requestError) && requestError.status === 401) {
+        onUnauthorized();
+        return;
+      }
+      setStorageError(readErrorMessage(requestError, t("common.unexpectedError")));
+    }
+  }, [onUnauthorized, t]);
+
   return {
     storageEntries,
     manualRelationships,
@@ -186,6 +202,7 @@ export function useStorageEntries({
     notificationDateFormatter,
     entryToOpenFromNotifications,
     openEntryFromNotifications,
-    handleEntryToOpenHandled
+    handleEntryToOpenHandled,
+    refreshStorageEntry
   };
 }

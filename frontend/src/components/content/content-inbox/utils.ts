@@ -13,10 +13,6 @@ export function resolveEntryFlag(form: InboxEntryFormValues): EntryFlag {
       return "LINK";
     case "table":
       return "TABLE";
-    case "enumeration":
-      return "ENUMERATION";
-    case "checklist":
-      return "CHECKLIST";
     default:
       return "RAW";
   }

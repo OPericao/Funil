@@ -201,6 +201,23 @@
     min-height: 172px;
   }
 
+  .rich-text-display .ql-editor {
+    padding: 0;
+    color: #111827;
+    font-size: 0.95rem;
+    line-height: 1.5rem;
+  }
+
+  .rich-text-display .ql-editor p,
+  .rich-text-display .ql-editor ol,
+  .rich-text-display .ql-editor ul {
+    margin-bottom: 0.5rem;
+  }
+
+  .rich-text-display .ql-editor > *:last-child {
+    margin-bottom: 0;
+  }
+
   .p-component {
     color: var(--ink-0);
   }

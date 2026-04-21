@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Editor } from "primereact/editor";
 import { isApiError } from "../../../api/client";
 import { createTextResource, updateEntryTitle, updateTextResource } from "../../../api/resources";
@@ -8,6 +8,7 @@ import { readErrorMessage } from "../../../utils/error";
 import {
   extractEditorHtmlFromStoredText,
   extractPlainTextFromStoredText,
+  extractUrlsFromStoredText,
   serializeRichTextPayload,
   supportsRichTextEntryFlag
 } from "../../../utils/richText";
@@ -15,26 +16,25 @@ import { errorTextClass, inputClass } from "../../ui/styles";
 import {
   ArrowDownTrayIcon,
   PencilSquareIcon,
-  SuccessCheckCircleIcon,
   TrashIcon,
   TwitchIcon,
   XMarkIcon
 } from "../../ui/icons";
 import { HeroVideoDialog } from "../../ui/HeroVideoDialog";
-import AnimatedList from "../../ui/AnimatedList";
+import { richTextEditorHeader } from "../richTextEditorHeader";
 
-type ChecklistDraftItem = { checked: boolean; text: string };
-type EnumerationDraftItem = { text: string };
 type EditableCsvTable = { delimiter: string; headers: string[]; rows: string[][] };
 
 type EntryDetailContentProps = {
   entry: EntryItem;
   onEntriesUpdated: () => Promise<void> | void;
+  onEntryUpdated?: (entryId: number) => Promise<void> | void;
   onUnauthorized: () => void;
 };
 
-const CHECKLIST_TITLES = new Set(["checklist", "todo list", "todolist", "todo"]);
-const TWITCH_URL_PATTERN = /(?:https?:\/\/)?(?:www\.|m\.)?(?:twitch\.tv|clips\.twitch\.tv)\/[^\s<>"')]+/gi;
+export type EntryDetailContentHandle = {
+  saveTextChanges: () => Promise<boolean>;
+};
 
 type YouTubeVideoPreview = {
   id: number;
@@ -52,40 +52,6 @@ type TwitchVideoPreview = {
   embedUrl: string;
   variant: "live" | "vod" | "clip";
 };
-
-function isChecklistResource(resource: EntryItem["resources"][number]) {
-  if (resource.type !== "RAW") {
-    return false;
-  }
-  const title = (resource.title ?? "").trim().toLowerCase();
-  return CHECKLIST_TITLES.has(title);
-}
-
-function shouldOpenTextEditorByDefault(entry: EntryItem | null) {
-  return entry?.flag === "CHECKLIST" || entry?.flag === "ENUMERATION";
-}
-
-const detailEditorHeader = (
-  <span className="ql-formats">
-    <button type="button" className="ql-bold" aria-label="Bold" />
-    <button type="button" className="ql-italic" aria-label="Italic" />
-    <button type="button" className="ql-underline" aria-label="Underline" />
-    <button type="button" className="ql-list" value="bullet" aria-label="Bullet list" />
-    <button type="button" className="ql-list" value="ordered" aria-label="Ordered list" />
-  </span>
-);
-
-function buildEntryTodoListText(entry: EntryItem): string | null {
-  const todoResources = entry.resources
-    .filter((resource) => isChecklistResource(resource))
-    .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
-    .filter(Boolean);
-
-  if (todoResources.length === 0) {
-    return null;
-  }
-  return todoResources.join("\n\n");
-}
 
 function parseCsvLine(line: string, delimiter: string): string[] {
   const cells: string[] = [];
@@ -163,127 +129,6 @@ function parseCsvTable(text: string): { headers: string[]; rows: string[][] } | 
   return { headers, rows };
 }
 
-function renderTodoListMarkdown(markdown: string): ReactNode {
-  const lines = markdown.split(/\r?\n/);
-
-  return lines.map((rawLine, index) => {
-    const line = rawLine.trim();
-
-    if (!line) {
-      return <div key={`spacer-${index}`} className="h-1" />;
-    }
-
-    if (line.startsWith("## ")) {
-      return (
-        <h4 key={`h2-${index}`} className="text-sm font-extrabold tracking-wide text-ink-900">
-          {line.slice(3).trim()}
-        </h4>
-      );
-    }
-
-    if (line.startsWith("### ")) {
-      return (
-        <h5 key={`h3-${index}`} className="text-xs font-bold uppercase tracking-wide text-ink-600">
-          {line.slice(4).trim()}
-        </h5>
-      );
-    }
-
-    if (line.startsWith("- [ ] ") || line.startsWith("- [x] ") || line.startsWith("- [X] ")) {
-      const checked = line.startsWith("- [x] ") || line.startsWith("- [X] ");
-      const content = line.slice(6).trim();
-      return (
-        <div key={`task-${index}`} className="flex items-start gap-2 rounded-control border border-[#F0F0F0] bg-brand-50 px-2.5 py-1.5">
-          <span
-            className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-              checked ? "border-brand-500 bg-brand-500 text-white" : "border-brand-300 bg-white/25 text-transparent"
-            }`}
-            aria-hidden="true"
-          >
-            ✓
-          </span>
-          <p className="break-all whitespace-pre-wrap text-sm text-ink-800">{content}</p>
-        </div>
-      );
-    }
-
-    if (line.startsWith("- ")) {
-      return (
-        <div key={`bullet-${index}`} className="flex items-start gap-2 px-1">
-          <span className="mt-1.5 inline-block h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
-          <p className="break-all whitespace-pre-wrap text-sm text-ink-700">{line.slice(2).trim()}</p>
-        </div>
-      );
-    }
-
-    return (
-      <p key={`p-${index}`} className="break-all whitespace-pre-wrap text-sm text-ink-700">
-        {line}
-      </p>
-    );
-  });
-}
-
-function parseChecklistDraft(text: string): ChecklistDraftItem[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      if (line.startsWith("- [x] ") || line.startsWith("- [X] ")) {
-        return { checked: true, text: line.slice(6).trim() };
-      }
-      if (line.startsWith("- [ ] ")) {
-        return { checked: false, text: line.slice(6).trim() };
-      }
-      if (line.startsWith("- ")) {
-        return { checked: false, text: line.slice(2).trim() };
-      }
-      return { checked: false, text: line.replace(/^\d+[.)]\s+/, "").trim() };
-    })
-    .filter((item) => item.text.length > 0);
-}
-
-function serializeChecklistDraft(items: ChecklistDraftItem[]): string {
-  return items
-    .filter((item) => item.text.trim().length > 0)
-    .map((item) => `- [${item.checked ? "x" : " "}] ${item.text.trim()}`)
-    .join("\n");
-}
-
-function splitEnumerationSegments(line: string): string[] {
-  const trimmed = line.trim();
-  if (!trimmed) {
-    return [];
-  }
-
-  const explicitListItem = trimmed.match(/^([-*]\s+|\d+[.)]\s+)(.+)$/);
-  if (explicitListItem) {
-    const content = explicitListItem[2].trim();
-    return content ? [content] : [];
-  }
-
-  return trimmed
-    .split(/\s*(?:[,;|]|\s·\s)\s*/g)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-}
-
-function parseEnumerationDraft(text: string): EnumerationDraftItem[] {
-  return text
-    .split(/\r?\n/)
-    .flatMap((line) => splitEnumerationSegments(line))
-    .map((itemText) => ({ text: itemText }))
-    .filter((item) => item.text.length > 0);
-}
-
-function serializeEnumerationDraft(items: EnumerationDraftItem[]): string {
-  return items
-    .map((item) => item.text.trim())
-    .filter(Boolean)
-    .map((text) => `- ${text}`)
-    .join("\n");
-}
 
 function buildDefaultEditableTable(): EditableCsvTable {
   return {
@@ -329,25 +174,14 @@ function serializeEditableCsvTable(table: EditableCsvTable): string {
 }
 
 function buildEntryText(entry: EntryItem, emptyText: string) {
-  if (entry.flag === "CHECKLIST") {
-    const todoItems = parseChecklistDraft(buildEntryTodoListText(entry) ?? "");
-    return todoItems.length > 0 ? `${todoItems.length} tareas` : emptyText;
-  }
-
   if (entry.flag === "TABLE") {
-    const tableResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
+    const tableResource = entry.resources.find((resource) => resource.type === "RAW");
     const table = parseCsvTable(extractPlainTextFromStoredText(tableResource?.textContent).trim());
-    return table ? `${table.rows.length} filas · ${table.headers.length} columnas` : "Tabla";
-  }
-
-  if (entry.flag === "ENUMERATION") {
-    const listResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
-    const items = parseEnumerationDraft(extractPlainTextFromStoredText(listResource?.textContent));
-    return items.length > 0 ? `${items.length} elementos` : "Lista";
+    return table ? `${table.rows.length} filas Â· ${table.headers.length} columnas` : "Tabla";
   }
 
   const textResources = entry.resources
-    .filter((resource) => resource.type === "RAW" && !isChecklistResource(resource))
+    .filter((resource) => resource.type === "RAW")
     .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
     .filter(Boolean);
 
@@ -603,12 +437,7 @@ function getEntryTwitchVideos(entry: EntryItem): TwitchVideoPreview[] {
     }
 
     if (resource.type === "RAW" && resource.textContent) {
-      const matches = extractPlainTextFromStoredText(resource.textContent).match(TWITCH_URL_PATTERN);
-      if (!matches) {
-        continue;
-      }
-
-      for (const candidateUrl of matches) {
+      for (const candidateUrl of extractUrlsFromStoredText(resource.textContent)) {
         const parsed = parseTwitchVideoPreview(candidateUrl);
         if (!parsed || videosByEmbed.has(parsed.embedUrl)) {
           continue;
@@ -667,22 +496,22 @@ function getEntryMedia(entry: EntryItem) {
     .filter((media) => Boolean(media.url));
 }
 
-export function EntryDetailContent({
+export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDetailContentProps>(function EntryDetailContent({
   entry,
   onEntriesUpdated,
+  onEntryUpdated,
   onUnauthorized
-}: EntryDetailContentProps) {
+}, ref) {
   const { t } = useI18n();
   const [editingField, setEditingField] = useState<"title" | null>(null);
   const [titleDraft, setTitleDraft] = useState(entry.title);
   const [textDraft, setTextDraft] = useState("");
   const [textHtmlDraft, setTextHtmlDraft] = useState("");
-  const [checklistDraft, setChecklistDraft] = useState<ChecklistDraftItem[]>([]);
-  const [enumerationDraft, setEnumerationDraft] = useState<EnumerationDraftItem[]>([]);
   const [tableDraft, setTableDraft] = useState<EditableCsvTable>(buildDefaultEditableTable());
   const [savingField, setSavingField] = useState<"title" | "text" | null>(null);
   const [detailSaveError, setDetailSaveError] = useState<string | null>(null);
   const [detailSaveSuccess, setDetailSaveSuccess] = useState<string | null>(null);
+  const pendingTextSaveRef = useRef<Promise<boolean> | null>(null);
 
   const selectedEntryLinks = useMemo(() => getEntryLinks(entry), [entry]);
   const selectedEntryYoutubeVideos = useMemo(() => getEntryYoutubeVideos(entry), [entry]);
@@ -694,57 +523,37 @@ export function EntryDetailContent({
   const selectedEntryMedia = useMemo(() => getEntryMedia(entry), [entry]);
 
   const selectedTextResource = useMemo(
-    () => entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource)) ?? null,
+    () => entry.resources.find((resource) => resource.type === "RAW") ?? null,
     [entry]
-  );
-  const selectedChecklistResource = useMemo(
-    () => entry.resources.find((resource) => isChecklistResource(resource)) ?? null,
-    [entry]
-  );
-  const selectedEditableTextResource = useMemo(
-    () => (entry.flag === "CHECKLIST" ? selectedChecklistResource : selectedTextResource),
-    [entry.flag, selectedChecklistResource, selectedTextResource]
-  );
-  const selectedTodoListText = useMemo(
-    () => (entry.flag === "CHECKLIST" ? extractPlainTextFromStoredText(selectedChecklistResource?.textContent).trim() || null : null),
-    [entry.flag, selectedChecklistResource]
   );
   const selectedCsvTable = useMemo(() => {
     if (entry.flag !== "TABLE") {
       return null;
     }
-    const rawText = extractPlainTextFromStoredText(selectedEditableTextResource?.textContent).trim();
+    const rawText = extractPlainTextFromStoredText(selectedTextResource?.textContent).trim();
     if (!rawText) {
       return null;
     }
     return parseCsvTable(rawText);
-  }, [entry.flag, selectedEditableTextResource]);
-  const selectedEnumerationItems = useMemo(
-    () => (entry.flag === "ENUMERATION" ? parseEnumerationDraft(extractPlainTextFromStoredText(selectedEditableTextResource?.textContent)) : []),
-    [entry.flag, selectedEditableTextResource]
-  );
+  }, [entry.flag, selectedTextResource]);
+  const selectedTextHtml = useMemo(() => {
+    const html = extractEditorHtmlFromStoredText(selectedTextResource?.textContent).trim();
+    return html.length > 0 ? html : null;
+  }, [selectedTextResource]);
 
-  const textDetailLabel = entry.flag === "TABLE"
-    ? t("storage.detailTable")
-    : entry.flag === "CHECKLIST"
-      ? t("storage.detailTodoList")
-      : entry.flag === "ENUMERATION"
-        ? t("icon.enumeration")
-        : t("storage.detailDescription");
+  const textDetailLabel = entry.flag === "TABLE" ? t("storage.detailTable") : t("storage.detailDescription");
 
   useEffect(() => {
-    const baseStoredText = selectedEditableTextResource?.textContent ?? "";
+    const baseStoredText = selectedTextResource?.textContent ?? "";
     const baseText = extractPlainTextFromStoredText(baseStoredText);
     setTitleDraft(entry.title);
     setTextDraft(baseText);
     setTextHtmlDraft(extractEditorHtmlFromStoredText(baseStoredText));
-    setChecklistDraft(parseChecklistDraft(baseText));
-    setEnumerationDraft(parseEnumerationDraft(baseText));
     setTableDraft(parseEditableCsvTable(baseText));
     setEditingField(null);
     setDetailSaveError(null);
     setDetailSaveSuccess(null);
-  }, [entry, selectedEditableTextResource]);
+  }, [entry, selectedTextResource]);
 
   function clearTextFeedback() {
     if (detailSaveError) {
@@ -762,27 +571,15 @@ export function EntryDetailContent({
   }
 
   function cancelEditingField() {
-    const baseStoredText = selectedEditableTextResource?.textContent ?? "";
+    const baseStoredText = selectedTextResource?.textContent ?? "";
     const baseText = extractPlainTextFromStoredText(baseStoredText);
     setTitleDraft(entry.title);
     setTextDraft(baseText);
     setTextHtmlDraft(extractEditorHtmlFromStoredText(baseStoredText));
-    setChecklistDraft(parseChecklistDraft(baseText));
-    setEnumerationDraft(parseEnumerationDraft(baseText));
     setTableDraft(parseEditableCsvTable(baseText));
     setEditingField(null);
     setDetailSaveError(null);
     setDetailSaveSuccess(null);
-  }
-
-  function updateChecklistItem(index: number, patch: Partial<ChecklistDraftItem>) {
-    setChecklistDraft((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
-    clearTextFeedback();
-  }
-
-  function updateEnumerationItem(index: number, text: string) {
-    setEnumerationDraft((current) => current.map((item, itemIndex) => (itemIndex === index ? { text } : item)));
-    clearTextFeedback();
   }
 
   function updateTableHeader(index: number, value: string) {
@@ -816,7 +613,11 @@ export function EntryDetailContent({
       setDetailSaveSuccess(null);
 
       await updateEntryTitle(entry.id, nextTitle);
-      await onEntriesUpdated();
+      if (onEntryUpdated) {
+        await onEntryUpdated(entry.id);
+      } else {
+        await onEntriesUpdated();
+      }
 
       setEditingField(null);
       setDetailSaveSuccess(t("storage.detailSaved"));
@@ -832,15 +633,13 @@ export function EntryDetailContent({
   }
 
   async function saveTextChanges() {
+    if (pendingTextSaveRef.current) {
+      return pendingTextSaveRef.current;
+    }
+
     const nextStoredText = (() => {
-      if (entry.flag === "CHECKLIST") {
-        return serializeChecklistDraft(checklistDraft).trim();
-      }
       if (entry.flag === "TABLE") {
         return serializeEditableCsvTable(tableDraft).trim();
-      }
-      if (entry.flag === "ENUMERATION") {
-        return serializeEnumerationDraft(enumerationDraft).trim();
       }
       return supportsRichTextEntryFlag(entry.flag)
         ? serializeRichTextPayload(textHtmlDraft, textDraft)
@@ -849,42 +648,60 @@ export function EntryDetailContent({
     const nextPlainText = supportsRichTextEntryFlag(entry.flag)
       ? textDraft.trim()
       : nextStoredText.trim();
+    const currentStoredText = selectedTextResource?.textContent ?? "";
 
-    if (!nextPlainText) {
-      setDetailSaveError(t("entries.textRequired"));
-      return;
+    if (!selectedTextResource && nextStoredText.length === 0) {
+      return true;
     }
 
-    try {
-      setSavingField("text");
-      setDetailSaveError(null);
-      setDetailSaveSuccess(null);
-
-      if (selectedEditableTextResource) {
-        await updateTextResource(entry.id, selectedEditableTextResource.id, {
-          title: selectedEditableTextResource.title ?? undefined,
-          textContent: nextStoredText
-        });
-      } else {
-        await createTextResource(entry.id, {
-          title: entry.flag === "CHECKLIST" ? "Checklist" : undefined,
-          textContent: nextStoredText
-        });
-      }
-
-      await onEntriesUpdated();
-
-      setDetailSaveSuccess(t("storage.detailSaved"));
-    } catch (requestError) {
-      if (isApiError(requestError) && requestError.status === 401) {
-        onUnauthorized();
-        return;
-      }
-      setDetailSaveError(readErrorMessage(requestError, t("common.unexpectedError")));
-    } finally {
-      setSavingField(null);
+    if (selectedTextResource && nextStoredText === currentStoredText) {
+      return true;
     }
+
+    const savePromise = (async () => {
+      try {
+        setSavingField("text");
+        setDetailSaveError(null);
+        setDetailSaveSuccess(null);
+
+        if (selectedTextResource) {
+          await updateTextResource(entry.id, selectedTextResource.id, {
+            title: selectedTextResource.title ?? undefined,
+            textContent: nextStoredText
+          });
+        } else {
+          await createTextResource(entry.id, {
+            textContent: nextStoredText
+          });
+        }
+
+        if (onEntryUpdated) {
+          await onEntryUpdated(entry.id);
+        } else {
+          void Promise.resolve(onEntriesUpdated()).catch(() => undefined);
+        }
+        setDetailSaveSuccess(t("storage.detailSaved"));
+        return true;
+      } catch (requestError) {
+        if (isApiError(requestError) && requestError.status === 401) {
+          onUnauthorized();
+          return false;
+        }
+        setDetailSaveError(readErrorMessage(requestError, t("common.unexpectedError")));
+        return false;
+      } finally {
+        setSavingField(null);
+        pendingTextSaveRef.current = null;
+      }
+    })();
+
+    pendingTextSaveRef.current = savePromise;
+    return savePromise;
   }
+
+  useImperativeHandle(ref, () => ({
+    saveTextChanges
+  }), [saveTextChanges]);
 
   return (
     <div className="grid gap-3">
@@ -961,72 +778,7 @@ export function EntryDetailContent({
           </p>
           {true ? (
             <div className="mt-2 grid gap-2">
-              {entry.flag === "CHECKLIST" ? (
-                <div className="grid gap-3">
-                  <AnimatedList
-                    items={checklistDraft}
-                    showGradients
-                    enableArrowNavigation={false}
-                    displayScrollbar
-                    className="w-full"
-                    getItemKey={(_, index) => `checklist-edit-${index}`}
-                    renderItem={(item, index, selected) => (
-                      <div
-                        className={`flex items-center gap-3 rounded-[18px] border px-3 py-2.5 shadow-sm transition ${
-                          item.checked
-                            ? "border-emerald-200 bg-emerald-50/80"
-                            : selected
-                              ? "border-brand-300 bg-brand-50/80"
-                              : "border-brand-200 bg-white/65"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            updateChecklistItem(index, { checked: !item.checked });
-                          }}
-                          disabled={savingField === "text"}
-                          aria-pressed={item.checked}
-                          aria-label={item.checked ? "Marcar tarea como pendiente" : "Marcar tarea como hecha"}
-                          className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition ${
-                            item.checked
-                              ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
-                              : "border-brand-300 bg-white text-brand-400 hover:border-brand-400 hover:text-brand-600"
-                          }`}
-                        >
-                          <SuccessCheckCircleIcon className="h-4 w-4" />
-                        </button>
-                        <input
-                          type="text"
-                          value={item.text}
-                          onChange={(event) => updateChecklistItem(index, { text: event.target.value })}
-                          onClick={(event) => event.stopPropagation()}
-                          className={`min-w-0 flex-1 rounded-[14px] border px-3 py-1.5 text-sm outline-none transition ${
-                            item.checked
-                              ? "border-emerald-200 bg-white/80 text-ink-700 line-through placeholder:text-emerald-300 focus:border-emerald-400"
-                              : "border-brand-200 bg-white text-ink-800 focus:border-brand-500"
-                          }`}
-                          disabled={savingField === "text"}
-                          placeholder={`Tarea ${index + 1}`}
-                        />
-                        <button
-                          type="button"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-500 transition hover:border-rose-300 hover:bg-rose-50"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setChecklistDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                            clearTextFeedback();
-                          }}
-                          disabled={savingField === "text"}
-                        >
-                          <TrashIcon className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  />
-                </div>
-              ) : entry.flag === "TABLE" ? (
+              {entry.flag === "TABLE" ? (
                 <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
                   <div className="scrollbar-brand max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
                     <table className="w-max min-w-full border-collapse text-sm">
@@ -1134,57 +886,12 @@ export function EntryDetailContent({
                     </button>
                   </div>
                 </div>
-              ) : entry.flag === "ENUMERATION" ? (
-                <div className="grid gap-3">
-                  <AnimatedList
-                    items={enumerationDraft}
-                    showGradients
-                    enableArrowNavigation={false}
-                    displayScrollbar
-                    className="w-full"
-                    getItemKey={(_, index) => `enum-edit-${index}`}
-                    renderItem={(item, index, selected) => (
-                      <div
-                        className={`flex items-center gap-3 rounded-[18px] border px-3 py-2 shadow-sm ${
-                          selected
-                            ? "border-violet-300 bg-violet-100/70"
-                            : "border-violet-200 bg-violet-50/60"
-                        }`}
-                      >
-                        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">
-                          {index + 1}
-                        </span>
-                        <input
-                          type="text"
-                          value={item.text}
-                          onChange={(event) => updateEnumerationItem(index, event.target.value)}
-                          onClick={(event) => event.stopPropagation()}
-                          className="min-w-0 flex-1 rounded-[14px] border border-violet-200 bg-white px-3 py-1.5 text-sm text-ink-800 outline-none transition focus:border-violet-400"
-                          disabled={savingField === "text"}
-                          placeholder={`Elemento ${index + 1}`}
-                        />
-                        <button
-                          type="button"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-500 transition hover:border-rose-300 hover:bg-rose-50"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setEnumerationDraft((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                            clearTextFeedback();
-                          }}
-                          disabled={savingField === "text"}
-                        >
-                          <TrashIcon className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  />
-                </div>
               ) : (
                 <Editor
                   readOnly={savingField === "text"}
                   showHeader
                   placeholder={t("storage.detailDescription")}
-                  headerTemplate={detailEditorHeader}
+                  headerTemplate={richTextEditorHeader}
                   value={textHtmlDraft || extractEditorHtmlFromStoredText(textDraft)}
                   className="w-full title-input-editor"
                   style={{ height: "240px" }}
@@ -1195,50 +902,6 @@ export function EntryDetailContent({
                   }}
                 />
               )}
-              <div className="flex items-center justify-end gap-2">
-                {entry.flag === "CHECKLIST" ? (
-                  <button
-                    type="button"
-                    className="mr-auto inline-flex h-10 items-center justify-center gap-2 rounded-full border border-brand-300 bg-white px-4 text-sm font-semibold text-ink-800 shadow-sm transition hover:-translate-y-0.5 hover:bg-brand-50"
-                    onClick={() => {
-                      setChecklistDraft((current) => [...current, { checked: false, text: "" }]);
-                      clearTextFeedback();
-                    }}
-                    disabled={savingField === "text"}
-                  >
-                    Anadir tarea
-                  </button>
-                ) : null}
-                {entry.flag === "ENUMERATION" ? (
-                  <button
-                    type="button"
-                    className="mr-auto inline-flex h-10 items-center justify-center gap-2 rounded-full border border-violet-300 bg-white px-4 text-sm font-semibold text-violet-800 shadow-sm transition hover:-translate-y-0.5 hover:bg-violet-50"
-                    onClick={() => {
-                      setEnumerationDraft((current) => [...current, { text: "" }]);
-                      clearTextFeedback();
-                    }}
-                    disabled={savingField === "text"}
-                  >
-                    Anadir elemento
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                  onClick={cancelEditingField}
-                  disabled={savingField === "text"}
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex h-9 items-center justify-center rounded-control border border-brand-500 bg-brand-500 px-3 text-sm font-semibold text-white transition hover:bg-brand-600"
-                  onClick={() => void saveTextChanges()}
-                  disabled={savingField === "text"}
-                >
-                  {savingField === "text" ? t("common.saving") : t("common.save")}
-                </button>
-              </div>
             </div>
           ) : (
             <>
@@ -1277,51 +940,16 @@ export function EntryDetailContent({
                     </tbody>
                   </table>
                 </div>
-              ) : entry.flag === "CHECKLIST" && selectedTodoListText ? (
-                <AnimatedList
-                  items={selectedTodoListText!.split(/\r?\n/).filter((line) => line.trim().length > 0)}
-                  showGradients
-                  enableArrowNavigation={false}
-                  displayScrollbar
-                  className="mt-2 w-full"
-                  getItemKey={(item, index) => `${item}-${index}`}
-                  renderItem={(item, index) => (
-                    <div className="rounded-[18px] border border-brand-200 bg-white/70 px-3 py-2.5">
-                      {renderTodoListMarkdown(item)}
-                    </div>
-                  )}
-                />
-              ) : entry.flag === "ENUMERATION" ? (
-                selectedEnumerationItems.length > 0 ? (
-                  <AnimatedList
-                    items={selectedEnumerationItems}
-                    showGradients
-                    enableArrowNavigation={false}
-                    displayScrollbar
-                    className="mt-2 w-full"
-                    getItemKey={(_, index) => `enum-view-${index}`}
-                    renderItem={(item, index, selected) => (
-                      <div
-                        className={`flex items-start gap-3 rounded-[18px] border px-3 py-2.5 shadow-sm ${
-                          selected
-                            ? "border-violet-300 bg-violet-100/70"
-                            : "border-violet-200 bg-violet-50/60"
-                        }`}
-                      >
-                        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-600 text-[11px] font-bold text-white">
-                          {index + 1}
-                        </span>
-                        <p className="break-all whitespace-pre-wrap pt-0.5 text-sm text-ink-700">{item.text}</p>
-                      </div>
-                    )}
-                  />
-                ) : (
-                  <p className="break-all whitespace-pre-wrap text-sm text-ink-700">{t("entries.noContent")}</p>
-                )
               ) : (
-                <p className="break-all whitespace-pre-wrap text-sm text-ink-700">
-                  {buildEntryText(entry, t("entries.noContent"))}
-                </p>
+                selectedTextHtml ? (
+                  <div className="rich-text-display ql-snow mt-2 rounded-control border border-brand-200 bg-white/70 px-3 py-2.5 text-sm text-ink-700">
+                    <div className="ql-editor" dangerouslySetInnerHTML={{ __html: selectedTextHtml ?? "" }} />
+                  </div>
+                ) : (
+                  <p className="break-all whitespace-pre-wrap text-sm text-ink-700">
+                    {buildEntryText(entry, t("entries.noContent"))}
+                  </p>
+                )
               )}
             </>
           )}
@@ -1603,4 +1231,4 @@ export function EntryDetailContent({
       )}
     </div>
   );
-}
+});

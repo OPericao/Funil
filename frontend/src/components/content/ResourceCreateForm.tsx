@@ -5,6 +5,7 @@ import type { EntryItem, ResourceType } from "../../types/resource";
 import type { ResourceFormValues } from "../../features/content/resourceForm";
 import { formStackClass, inputClass, primaryButtonClass, textareaClass } from "../ui/styles";
 import { extractEditorHtmlFromStoredText, supportsRichTextEntryFlag } from "../../utils/richText";
+import { richTextEditorHeader } from "./richTextEditorHeader";
 
 type ResourceCreateFormProps = {
   entries: EntryItem[];
@@ -27,16 +28,6 @@ export function ResourceCreateForm({
     [entries, values.selectedEntryId]
   );
   const canUseRichTextEditor = values.type === "RAW" && supportsRichTextEntryFlag(selectedEntry?.flag);
-
-  const editorHeader = (
-    <span className="ql-formats">
-      <button type="button" className="ql-bold" aria-label="Bold" />
-      <button type="button" className="ql-italic" aria-label="Italic" />
-      <button type="button" className="ql-underline" aria-label="Underline" />
-      <button type="button" className="ql-list" value="bullet" aria-label="Bullet list" />
-      <button type="button" className="ql-list" value="ordered" aria-label="Ordered list" />
-    </span>
-  );
 
   return (
     <form className={formStackClass} onSubmit={onSubmit}>
@@ -80,7 +71,7 @@ export function ResourceCreateForm({
             readOnly={submitting}
             showHeader
             placeholder={t("resourceCreate.textPlaceholder")}
-            headerTemplate={editorHeader}
+            headerTemplate={richTextEditorHeader}
             value={values.textContentHtml || extractEditorHtmlFromStoredText(values.textContent)}
             className="w-full title-input-editor"
             style={{ height: "220px" }}

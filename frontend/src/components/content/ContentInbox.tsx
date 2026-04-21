@@ -217,6 +217,7 @@ export function ContentInbox({
           searchError={storage.storageSearchError}
           onSearchChange={storage.setStorageSearchValue}
           onEntriesUpdated={storage.loadStorageEntries}
+          onEntryUpdated={storage.refreshStorageEntry}
           onUnauthorized={onLogout}
           entryToOpenId={storage.entryToOpenFromNotifications}
           onEntryToOpenHandled={storage.handleEntryToOpenHandled}

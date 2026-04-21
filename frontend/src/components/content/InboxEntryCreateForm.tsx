@@ -5,10 +5,8 @@ import { Button } from "../ui/Button";
 import { extractEditorHtmlFromStoredText } from "../../utils/richText";
 import {
   AlarmClockIcon,
-  ChecklistIcon,
   FileDropIcon,
   LinkIcon,
-  ListBulletIcon,
   MusicalNoteIcon,
   TableIcon,
   TwitchIcon,
@@ -16,15 +14,14 @@ import {
 } from "../ui/icons";
 import { errorTextClass, fieldLabelClass, inputClass } from "../ui/styles";
 import spotyIcon from "../../assets/spoty.png";
+import { richTextEditorHeader } from "./richTextEditorHeader";
 
 type PrimaryInboxOption =
   | "youtube"
   | "spotify"
   | "twitch"
   | "link"
-  | "table"
-  | "enumeration"
-  | "checklist";
+  | "table";
 
 export type InboxEntryFormValues = {
   title: string;
@@ -52,16 +49,6 @@ function toggleButtonClass(active: boolean) {
       : "border-brand-200 bg-white text-[#111827] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
   ].join(" ");
 }
-
-const editorHeader = (
-  <span className="ql-formats">
-    <button type="button" className="ql-bold" aria-label="Bold" />
-    <button type="button" className="ql-italic" aria-label="Italic" />
-    <button type="button" className="ql-underline" aria-label="Underline" />
-    <button type="button" className="ql-list" value="bullet" aria-label="Bullet list" />
-    <button type="button" className="ql-list" value="ordered" aria-label="Ordered list" />
-  </span>
-);
 
 type IconToggleButtonProps = {
   label: string;
@@ -200,7 +187,7 @@ export function InboxEntryCreateForm({
             readOnly={submitting}
             showHeader
             placeholder={t("inbox.textPlaceholder")}
-            headerTemplate={editorHeader}
+            headerTemplate={richTextEditorHeader}
             value={values.textContentHtml || extractEditorHtmlFromStoredText(values.textContent)}
             className="w-full flex-1 title-input-editor"
             style={{ height: "220px" }}
@@ -366,23 +353,6 @@ export function InboxEntryCreateForm({
           >
             <TableIcon className="h-6 w-6" />
           </IconToggleButton>
-          <IconToggleButton
-            label={t("icon.checklist")}
-            active={values.selectedPrimaryOption === "checklist"}
-            disabled={submitting}
-            onClick={() => togglePrimaryOption("checklist")}
-          >
-            <ChecklistIcon className="h-6 w-6" />
-          </IconToggleButton>
-          <IconToggleButton
-            label={t("icon.enumeration")}
-            active={values.selectedPrimaryOption === "enumeration"}
-            disabled={submitting}
-            onClick={() => togglePrimaryOption("enumeration")}
-          >
-            <ListBulletIcon className="h-6 w-6" />
-          </IconToggleButton>
-
           <div className="col-span-4 my-1 hidden h-11 w-px justify-self-center bg-gray-700 sm:mx-3 sm:my-0 sm:block" />
 
           <IconToggleButton label={t("icon.alarm")} active={values.alarmEnabled} disabled={submitting} onClick={toggleAlarm}>

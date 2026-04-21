@@ -10,6 +10,9 @@ type RichTextPayload = {
   text: string;
 };
 
+const URL_TEXT_PATTERN = /(?:https?:\/\/)?(?:www\.|m\.)?[^\s<>"')]+\.[^\s<>"')]+/gi;
+const LINK_HREF_PATTERN = /<a\b[^>]*\bhref=(["'])(.*?)\1/gi;
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -19,16 +22,91 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
+type LegacyListBlock =
+  | { kind: "bullet"; items: string[] }
+  | { kind: "ordered"; items: string[] }
+  | { kind: "checklist"; items: Array<{ checked: boolean; text: string }> };
+
+function serializeLegacyListBlock(block: LegacyListBlock) {
+  if (block.kind === "checklist") {
+    return `<ol>${block.items
+      .map((item) => `<li data-list="${item.checked ? "checked" : "unchecked"}"><span class="ql-ui" contenteditable="false"></span>${escapeHtml(item.text)}</li>`)
+      .join("")}</ol>`;
+  }
+
+  return `<ol>${block.items
+    .map((item) => `<li data-list="${block.kind}"><span class="ql-ui" contenteditable="false"></span>${escapeHtml(item)}</li>`)
+    .join("")}</ol>`;
+}
+
 function toPlainEditorHtml(value: string) {
   if (!value) {
     return "";
   }
 
-  return `<p>${escapeHtml(value).replace(/\n/g, "<br />")}</p>`;
+  const lines = value.replace(/\r\n/g, "\n").split("\n");
+  const blocks: string[] = [];
+  let currentList: LegacyListBlock | null = null;
+
+  function flushCurrentList() {
+    if (!currentList) {
+      return;
+    }
+    blocks.push(serializeLegacyListBlock(currentList));
+    currentList = null;
+  }
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      flushCurrentList();
+      continue;
+    }
+
+    const checklistMatch = trimmed.match(/^- \[([ xX])\]\s+(.+)$/);
+    if (checklistMatch) {
+      if (!currentList || currentList.kind !== "checklist") {
+        flushCurrentList();
+        currentList = { kind: "checklist", items: [] };
+      }
+      currentList.items.push({
+        checked: checklistMatch[1].toLowerCase() === "x",
+        text: checklistMatch[2]
+      });
+      continue;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      if (!currentList || currentList.kind !== "bullet") {
+        flushCurrentList();
+        currentList = { kind: "bullet", items: [] };
+      }
+      currentList.items.push(bulletMatch[1]);
+      continue;
+    }
+
+    const orderedMatch = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (orderedMatch) {
+      if (!currentList || currentList.kind !== "ordered") {
+        flushCurrentList();
+        currentList = { kind: "ordered", items: [] };
+      }
+      currentList.items.push(orderedMatch[1]);
+      continue;
+    }
+
+    flushCurrentList();
+    blocks.push(`<p>${escapeHtml(rawLine).replace(/\n/g, "<br />")}</p>`);
+  }
+
+  flushCurrentList();
+  return blocks.join("");
 }
 
 export function supportsRichTextEntryFlag(flag: EntryFlag | null | undefined) {
-  return !flag || flag === "RAW";
+  return !flag || flag !== "TABLE";
 }
 
 export function serializeRichTextPayload(htmlValue: string | null | undefined, textValue: string | null | undefined) {
@@ -75,6 +153,30 @@ export function extractPlainTextFromStoredText(value: string | null | undefined)
     return payload.text;
   }
   return value ?? "";
+}
+
+export function extractUrlsFromStoredText(value: string | null | undefined) {
+  const payload = parseRichTextPayload(value);
+  const urls = new Set<string>();
+
+  if (payload?.html) {
+    for (const match of payload.html.matchAll(LINK_HREF_PATTERN)) {
+      const href = match[2]?.trim();
+      if (href) {
+        urls.add(href);
+      }
+    }
+  }
+
+  const plainText = payload?.text ?? value ?? "";
+  for (const match of plainText.matchAll(URL_TEXT_PATTERN)) {
+    const candidate = match[0]?.trim();
+    if (candidate) {
+      urls.add(candidate);
+    }
+  }
+
+  return Array.from(urls);
 }
 
 export function extractEditorHtmlFromStoredText(value: string | null | undefined) {
