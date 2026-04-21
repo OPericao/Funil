@@ -4,6 +4,7 @@ import { createEntry, uploadFile } from "../../api/resources";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { CreateEntryResourceInput, EntryFlag } from "../../types/resource";
 import { readErrorMessage } from "../../utils/error";
+import { serializeRichTextPayload, supportsRichTextEntryFlag } from "../../utils/richText";
 import { SuccessToast } from "../ui/SuccessToast";
 import {
   InboxEntryCreateForm,
@@ -13,6 +14,7 @@ import {
 const INITIAL_INBOX_ENTRY_FORM: InboxEntryFormValues = {
   title: "",
   textContent: "",
+  textContentHtml: "",
   mediaFiles: [],
   selectedPrimaryOption: null,
   alarmEnabled: false
@@ -97,7 +99,9 @@ export function ContentExtensionWidget({ onLogout }: ContentExtensionWidgetProps
             }
           : {
               type: "RAW",
-              textContent
+              textContent: supportsRichTextEntryFlag(activeFlag)
+                ? serializeRichTextPayload(inboxEntryForm.textContentHtml, textContent)
+                : textContent
             }
       );
     }

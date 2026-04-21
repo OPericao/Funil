@@ -1,6 +1,8 @@
 import { DragEvent, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { Editor } from "primereact/editor";
 import { useI18n } from "../../i18n/I18nProvider";
 import { Button } from "../ui/Button";
+import { extractEditorHtmlFromStoredText } from "../../utils/richText";
 import {
   AlarmClockIcon,
   ChecklistIcon,
@@ -12,7 +14,7 @@ import {
   TwitchIcon,
   YoutubeIcon
 } from "../ui/icons";
-import { errorTextClass, fieldLabelClass, inputClass, textareaClass } from "../ui/styles";
+import { errorTextClass, fieldLabelClass, inputClass } from "../ui/styles";
 import spotyIcon from "../../assets/spoty.png";
 
 type PrimaryInboxOption =
@@ -27,6 +29,7 @@ type PrimaryInboxOption =
 export type InboxEntryFormValues = {
   title: string;
   textContent: string;
+  textContentHtml: string;
   mediaFiles: File[];
   selectedPrimaryOption: PrimaryInboxOption | null;
   alarmEnabled: boolean;
@@ -43,12 +46,22 @@ type InboxEntryCreateFormProps = {
 
 function toggleButtonClass(active: boolean) {
   return [
-    "glass-surface flex h-11 w-full items-center justify-center border transition sm:w-11",
+    "glass-surface btn-fill-anim flex h-11 w-full items-center justify-center border transition sm:w-11",
     active
-      ? "border-white bg-black/20 text-[#111827] shadow-[0_0_10px_rgba(255,255,255,0.8)]"
-      : "text-[#111827] hover:bg-white/20"
+      ? "border-black bg-black text-white shadow-[0_0_0_1px_rgba(17,24,39,0.45),0_10px_22px_rgba(15,23,42,0.18)] [--btn-fill:#111827] [--btn-text-hover:#ffffff]"
+      : "border-brand-200 bg-white text-[#111827] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
   ].join(" ");
 }
+
+const editorHeader = (
+  <span className="ql-formats">
+    <button type="button" className="ql-bold" aria-label="Bold" />
+    <button type="button" className="ql-italic" aria-label="Italic" />
+    <button type="button" className="ql-underline" aria-label="Underline" />
+    <button type="button" className="ql-list" value="bullet" aria-label="Bullet list" />
+    <button type="button" className="ql-list" value="ordered" aria-label="Ordered list" />
+  </span>
+);
 
 type IconToggleButtonProps = {
   label: string;
@@ -164,15 +177,15 @@ export function InboxEntryCreateForm({
   }
 
   return (
-    <form className="grid w-full gap-3 font-sans inbox-glass-text" onSubmit={handleSubmit}>
-      <section className="glass-card h-auto w-full max-w-full border-white/90 bg-[linear-gradient(180deg,rgba(255,247,239,0.95)_0%,rgba(228,242,255,0.9)_100%)] p-5 shadow-[0_24px_56px_rgba(15,23,42,0.12)] md:p-6">
+    <form className="grid min-h-full w-full gap-3 font-sans inbox-glass-text" onSubmit={handleSubmit}>
+      <section className="glass-card flex h-auto min-h-[520px] w-full max-w-full flex-1 flex-col border-white/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(240,240,240,0.92)_100%)] p-5 shadow-[0_24px_56px_rgba(15,15,15,0.12)] md:min-h-[560px] md:p-6">
         {heading ? (
           <div className="mb-4">
             <h2 className="heading-title text-center text-ink-900">{heading}</h2>
           </div>
         ) : null}
         
-        <div className="grid gap-4">
+        <div className="flex flex-1 flex-col gap-4">
           <textarea
             maxLength={80}
             rows={1}
@@ -183,13 +196,19 @@ export function InboxEntryCreateForm({
             onChange={(event) => onChange({ title: event.target.value })}
           />
 
-          <textarea
-            disabled={submitting}
-            autoFocus
+          <Editor
+            readOnly={submitting}
+            showHeader
             placeholder={t("inbox.textPlaceholder")}
-            className={`${textareaClass} min-h-[160px] max-h-[160px] resize-none overflow-hidden`}
-            value={values.textContent}
-            onChange={(event) => onChange({ textContent: event.target.value })}
+            headerTemplate={editorHeader}
+            value={values.textContentHtml || extractEditorHtmlFromStoredText(values.textContent)}
+            className="w-full flex-1 title-input-editor"
+            style={{ height: "220px" }}
+            onTextChange={(event) =>
+              onChange({
+                textContent: event.htmlValue ? event.textValue.replace(/\r\n/g, "\n").replace(/\n$/, "") : "",
+                textContentHtml: event.htmlValue ?? ""
+              })}
           />
 
           <div
@@ -214,8 +233,8 @@ export function InboxEntryCreateForm({
                 <div
                   className={`flex h-full items-center justify-center rounded-2xl border-2 border-dashed px-4 py-5 text-center transition ${
                     isFileDropActive
-                      ? "border-white/90 bg-[linear-gradient(180deg,rgba(255,249,242,0.92)_0%,rgba(230,243,255,0.86)_100%)] text-ink-900 shadow-[0_16px_30px_rgba(15,23,42,0.08)]"
-                      : "border-white/75 bg-[linear-gradient(180deg,rgba(255,250,244,0.84)_0%,rgba(236,244,252,0.76)_100%)] text-ink-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
+                      ? "border-brand-300 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(235,235,235,0.9)_100%)] text-ink-900 shadow-[0_16px_30px_rgba(15,15,15,0.08)]"
+                      : "border-brand-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(242,242,242,0.88)_100%)] text-ink-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
                   }`}
                   role="button"
                   tabIndex={0}
@@ -241,7 +260,7 @@ export function InboxEntryCreateForm({
                     {values.mediaFiles.map((file, index) => {
                       const previewUrl = previewUrls[index];
                       return (
-                        <div key={`${file.name}-${file.lastModified}-${index}`} className="rounded-lg border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,242,0.94)_0%,rgba(239,246,255,0.88)_100%)] p-2 shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
+                        <div key={`${file.name}-${file.lastModified}-${index}`} className="rounded-lg border border-brand-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(242,242,242,0.92)_100%)] p-2 shadow-[0_10px_22px_rgba(15,15,15,0.06)]">
                           <div className="mb-1 flex items-start justify-between gap-2">
                             <p className="truncate text-xs font-semibold text-ink-900">{file.name}</p>
                             <button
@@ -281,7 +300,7 @@ export function InboxEntryCreateForm({
                   type="button"
                   aria-label={t("inbox.filesLabel")}
                   disabled={submitting}
-                  className="inline-flex w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-white/75 bg-[linear-gradient(180deg,rgba(255,250,244,0.84)_0%,rgba(236,244,252,0.78)_100%)] text-2xl font-bold leading-none text-ink-700 shadow-[0_12px_24px_rgba(15,23,42,0.06)] transition hover:border-white/90 hover:bg-[linear-gradient(180deg,rgba(255,248,241,0.94)_0%,rgba(227,242,255,0.86)_100%)] disabled:cursor-not-allowed disabled:opacity-70"
+                  className="btn-fill-anim inline-flex w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-dashed border-brand-200 bg-white text-2xl font-bold leading-none text-ink-700 shadow-[0_12px_24px_rgba(19,61,81,0.06)] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff] disabled:cursor-not-allowed disabled:opacity-70"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -305,7 +324,7 @@ export function InboxEntryCreateForm({
         </div>
       </section>
 
-      <section className="glass-card h-auto w-full max-w-full overflow-visible border-white/90 bg-[linear-gradient(180deg,rgba(255,247,239,0.94)_0%,rgba(230,243,255,0.88)_100%)] p-3 shadow-[0_20px_44px_rgba(15,23,42,0.10)]">
+      <section className="glass-card h-auto w-full max-w-full overflow-visible border-white/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(238,238,238,0.92)_100%)] p-3 shadow-[0_20px_44px_rgba(15,15,15,0.10)]">
         <div className="grid grid-cols-4 gap-2 sm:flex sm:items-center sm:gap-3">
           <IconToggleButton
             label={t("icon.youtube")}
@@ -376,7 +395,7 @@ export function InboxEntryCreateForm({
               variant="primary"
               size="md"
               fullWidth
-              className="!text-[#F0F0F0] [--btn-text-hover:#F0F0F0] sm:min-w-[116px] sm:w-auto sm:px-5"
+              className="sm:min-w-[116px] sm:w-auto sm:px-5"
               disabled={submitting}
             >
               {submitting ? t("common.saving") : t("inbox.save")}

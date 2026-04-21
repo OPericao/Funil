@@ -66,7 +66,7 @@ export function ContentInboxHeader({
   const { language, setLanguage, t } = useI18n();
 
   return (
-    <header className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b border-white/90 bg-[linear-gradient(180deg,rgba(255,247,239,0.9)_0%,rgba(226,242,255,0.8)_100%)] px-4 backdrop-blur-md sm:px-6">
+    <header className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b border-white/95 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(238,238,238,0.9)_100%)] px-4 backdrop-blur-md sm:px-6">
       <button
         type="button"
         className="inline-flex items-center justify-center"
@@ -102,7 +102,7 @@ export function ContentInboxHeader({
         <div className="relative">
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/90 bg-[linear-gradient(180deg,rgba(255,248,241,0.96)_0%,rgba(228,243,255,0.9)_100%)] text-[#13505B] shadow-[0_14px_26px_rgba(15,23,42,0.07)] transition hover:border-[#13505B] hover:bg-[#13505B] hover:text-[#F0F0F0]"
+            className="btn-fill-anim inline-flex h-10 w-10 items-center justify-center rounded-control border border-brand-200 bg-white text-ink-900 shadow-[0_14px_26px_rgba(19,61,81,0.07)] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
             aria-label={t("notifications.ariaButton")}
             aria-haspopup="menu"
             aria-expanded={notificationsOpen}
@@ -113,7 +113,7 @@ export function ContentInboxHeader({
 
           {notificationsOpen ? (
             <section
-              className="absolute top-[calc(100%+10px)] z-40 w-[320px] max-w-[calc(100vw-2rem)] rounded-card border border-white/90 bg-[linear-gradient(180deg,rgba(255,248,241,0.97)_0%,rgba(234,245,255,0.93)_100%)] p-3 shadow-card backdrop-blur-md"
+              className="absolute top-[calc(100%+10px)] z-40 w-[320px] max-w-[calc(100vw-2rem)] rounded-card border border-white/95 bg-[linear-gradient(180deg,rgba(255,255,255,0.99)_0%,rgba(240,240,240,0.95)_100%)] p-3 shadow-card backdrop-blur-md"
               style={{ right: 0 }}
               role="menu"
               aria-label={t("notifications.menuAria")}
@@ -155,7 +155,7 @@ export function ContentInboxHeader({
         <div className="relative">
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-[#F0F0F0] bg-white/25 text-[#13505B] transition hover:bg-[#13505B] hover:text-[#F0F0F0]"
+            className="btn-fill-anim inline-flex h-10 w-10 items-center justify-center rounded-control border border-brand-200 bg-white text-ink-900 shadow-[0_12px_24px_rgba(19,61,81,0.06)] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
             aria-label={t("settings.ariaButton")}
             aria-haspopup="menu"
             aria-expanded={settingsOpen}
@@ -166,7 +166,7 @@ export function ContentInboxHeader({
 
           {settingsOpen ? (
             <section
-              className="absolute right-0 top-[calc(100%+10px)] z-40 w-56 max-w-[calc(100vw-3rem)] rounded-card border border-[#F0F0F0] bg-white/95 p-3 shadow-card backdrop-blur-sm"
+              className="absolute right-0 top-[calc(100%+10px)] z-40 w-56 max-w-[calc(100vw-3rem)] rounded-card border border-brand-200 bg-white/95 p-3 shadow-card backdrop-blur-sm"
               role="menu"
               aria-label={t("settings.menuAria")}
             >
@@ -183,8 +183,8 @@ export function ContentInboxHeader({
                         type="button"
                         className={`flex items-center justify-between rounded-control border px-2.5 py-2 text-sm font-semibold transition ${
                           selected
-                            ? "border-brand-400 bg-brand-100 text-brand-800"
-                            : "border-[#F0F0F0] bg-white/25 text-ink-700 hover:bg-brand-50"
+                            ? "btn-fill-anim border-brand-700 bg-brand-500 text-white [--btn-fill:#04586b] [--btn-text-hover:#ffffff]"
+                            : "btn-fill-anim border-brand-200 bg-white text-ink-700 [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
                         }`}
                         role="menuitemradio"
                         aria-checked={selected}
@@ -195,7 +195,7 @@ export function ContentInboxHeader({
                       >
                         <span>{t(`settings.language.${languageOption}` as I18nKey)}</span>
                         {selected ? (
-                          <span className="text-xs text-brand-700">{t("settings.current")}</span>
+                          <span className="text-xs text-white/85">{t("settings.current")}</span>
                         ) : null}
                       </button>
                     );

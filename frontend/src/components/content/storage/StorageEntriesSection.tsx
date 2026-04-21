@@ -13,6 +13,7 @@ import {
 import { useI18n } from "../../../i18n/I18nProvider";
 import type { EntryFolderItem, EntryItem, FolderItem, EntryRelationshipItem } from "../../../types/resource";
 import { readErrorMessage } from "../../../utils/error";
+import { extractPlainTextFromStoredText } from "../../../utils/richText";
 import GlassIcons from "../../ui/GlassIcons";
 import { errorTextClass, fieldLabelClass, inputClass } from "../../ui/styles";
 import { StorageTabIcon } from "../../ui/StorageTabIcon";
@@ -82,7 +83,7 @@ function buildEntrySearchableText(entry: EntryItem) {
     .map((resource) =>
       [
         resource.title,
-        resource.textContent,
+        extractPlainTextFromStoredText(resource.textContent),
         resource.url,
         resource.siteName,
         resource.description,
@@ -122,13 +123,13 @@ function buildEntryText(entry: EntryItem, emptyText: string) {
 
   if (entry.flag === "TABLE") {
     const tableResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
-    const table = parseCsvTable(tableResource?.textContent?.trim() ?? "");
+    const table = parseCsvTable(extractPlainTextFromStoredText(tableResource?.textContent).trim());
     return table ? `${table.rows.length} filas · ${table.headers.length} columnas` : "Tabla";
   }
 
   if (entry.flag === "ENUMERATION") {
     const listResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
-    const items = parseEnumerationDraft(listResource?.textContent ?? "");
+    const items = parseEnumerationDraft(extractPlainTextFromStoredText(listResource?.textContent));
     return items.length > 0 ? `${items.length} elementos` : "Lista";
   }
 
@@ -136,7 +137,7 @@ function buildEntryText(entry: EntryItem, emptyText: string) {
     .filter(
       (resource) =>
         (resource.type === "RAW" && !isChecklistResource(resource)))
-    .map((resource) => resource.textContent?.trim() ?? "")
+    .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
     .filter(Boolean);
 
   if (textResources.length > 0) {
@@ -145,7 +146,7 @@ function buildEntryText(entry: EntryItem, emptyText: string) {
 
   for (const resource of entry.resources) {
     const preview =
-      resource.textContent
+      extractPlainTextFromStoredText(resource.textContent)
       ?? resource.description
       ?? resource.contentPreview
       ?? resource.url
@@ -163,7 +164,7 @@ function buildEntryText(entry: EntryItem, emptyText: string) {
 function buildEntryTodoListText(entry: EntryItem): string | null {
   const todoResources = entry.resources
     .filter((resource) => isChecklistResource(resource))
-    .map((resource) => resource.textContent?.trim() ?? "")
+    .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
     .filter(Boolean);
 
   if (todoResources.length === 0) {
@@ -675,7 +676,7 @@ function getEntryTwitchVideos(entry: EntryItem): TwitchVideoPreview[] {
     }
 
     if ((resource.type === "RAW") && resource.textContent) {
-      const matches = resource.textContent.match(TWITCH_URL_PATTERN);
+      const matches = extractPlainTextFromStoredText(resource.textContent).match(TWITCH_URL_PATTERN);
       if (!matches) {
         continue;
       }
@@ -946,14 +947,14 @@ export function StorageEntriesSection({
     if (selectedEntry?.flag !== "CHECKLIST") {
       return null;
     }
-    return selectedChecklistResource?.textContent?.trim() ?? null;
+    return extractPlainTextFromStoredText(selectedChecklistResource?.textContent).trim() || null;
   }, [selectedChecklistResource, selectedEntry]);
 
   const selectedCsvTable = useMemo(() => {
     if (!selectedEntry || selectedEntry.flag !== "TABLE") {
       return null;
     }
-    const rawText = selectedEditableTextResource?.textContent?.trim() ?? "";
+    const rawText = extractPlainTextFromStoredText(selectedEditableTextResource?.textContent).trim();
     if (!rawText) {
       return null;
     }
@@ -964,7 +965,7 @@ export function StorageEntriesSection({
     if (selectedEntry?.flag !== "ENUMERATION") {
       return [];
     }
-    return parseEnumerationDraft(selectedEditableTextResource?.textContent ?? "");
+    return parseEnumerationDraft(extractPlainTextFromStoredText(selectedEditableTextResource?.textContent));
   }, [selectedEditableTextResource, selectedEntry]);
   const textDetailLabel = selectedEntry?.flag === "TABLE"
     ? t("storage.detailTable")
@@ -1166,7 +1167,7 @@ export function StorageEntriesSection({
 
     setEditingField(shouldOpenTextEditorByDefault(selectedEntry) ? "text" : null);
     setTitleDraft(selectedEntry.title);
-    const baseText = selectedEditableTextResource?.textContent ?? "";
+    const baseText = extractPlainTextFromStoredText(selectedEditableTextResource?.textContent);
     setTextDraft(baseText);
     setChecklistDraft(parseChecklistDraft(baseText));
     setEnumerationDraft(parseEnumerationDraft(baseText));
@@ -1417,7 +1418,7 @@ export function StorageEntriesSection({
       return;
     }
     setTitleDraft(selectedEntry.title);
-    const baseText = selectedEditableTextResource?.textContent ?? "";
+    const baseText = extractPlainTextFromStoredText(selectedEditableTextResource?.textContent);
     setTextDraft(baseText);
     setChecklistDraft(parseChecklistDraft(baseText));
     setEnumerationDraft(parseEnumerationDraft(baseText));

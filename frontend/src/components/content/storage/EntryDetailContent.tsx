@@ -1,9 +1,16 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { Editor } from "primereact/editor";
 import { isApiError } from "../../../api/client";
 import { createTextResource, updateEntryTitle, updateTextResource } from "../../../api/resources";
 import { useI18n } from "../../../i18n/I18nProvider";
 import type { EntryItem } from "../../../types/resource";
 import { readErrorMessage } from "../../../utils/error";
+import {
+  extractEditorHtmlFromStoredText,
+  extractPlainTextFromStoredText,
+  serializeRichTextPayload,
+  supportsRichTextEntryFlag
+} from "../../../utils/richText";
 import { errorTextClass, inputClass } from "../../ui/styles";
 import {
   ArrowDownTrayIcon,
@@ -58,10 +65,20 @@ function shouldOpenTextEditorByDefault(entry: EntryItem | null) {
   return entry?.flag === "CHECKLIST" || entry?.flag === "ENUMERATION";
 }
 
+const detailEditorHeader = (
+  <span className="ql-formats">
+    <button type="button" className="ql-bold" aria-label="Bold" />
+    <button type="button" className="ql-italic" aria-label="Italic" />
+    <button type="button" className="ql-underline" aria-label="Underline" />
+    <button type="button" className="ql-list" value="bullet" aria-label="Bullet list" />
+    <button type="button" className="ql-list" value="ordered" aria-label="Ordered list" />
+  </span>
+);
+
 function buildEntryTodoListText(entry: EntryItem): string | null {
   const todoResources = entry.resources
     .filter((resource) => isChecklistResource(resource))
-    .map((resource) => resource.textContent?.trim() ?? "")
+    .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
     .filter(Boolean);
 
   if (todoResources.length === 0) {
@@ -319,19 +336,19 @@ function buildEntryText(entry: EntryItem, emptyText: string) {
 
   if (entry.flag === "TABLE") {
     const tableResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
-    const table = parseCsvTable(tableResource?.textContent?.trim() ?? "");
+    const table = parseCsvTable(extractPlainTextFromStoredText(tableResource?.textContent).trim());
     return table ? `${table.rows.length} filas · ${table.headers.length} columnas` : "Tabla";
   }
 
   if (entry.flag === "ENUMERATION") {
     const listResource = entry.resources.find((resource) => resource.type === "RAW" && !isChecklistResource(resource));
-    const items = parseEnumerationDraft(listResource?.textContent ?? "");
+    const items = parseEnumerationDraft(extractPlainTextFromStoredText(listResource?.textContent));
     return items.length > 0 ? `${items.length} elementos` : "Lista";
   }
 
   const textResources = entry.resources
     .filter((resource) => resource.type === "RAW" && !isChecklistResource(resource))
-    .map((resource) => resource.textContent?.trim() ?? "")
+    .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
     .filter(Boolean);
 
   if (textResources.length > 0) {
@@ -340,7 +357,7 @@ function buildEntryText(entry: EntryItem, emptyText: string) {
 
   for (const resource of entry.resources) {
     const preview =
-      resource.textContent
+      extractPlainTextFromStoredText(resource.textContent)
       ?? resource.description
       ?? resource.contentPreview
       ?? resource.url
@@ -586,7 +603,7 @@ function getEntryTwitchVideos(entry: EntryItem): TwitchVideoPreview[] {
     }
 
     if (resource.type === "RAW" && resource.textContent) {
-      const matches = resource.textContent.match(TWITCH_URL_PATTERN);
+      const matches = extractPlainTextFromStoredText(resource.textContent).match(TWITCH_URL_PATTERN);
       if (!matches) {
         continue;
       }
@@ -656,11 +673,10 @@ export function EntryDetailContent({
   onUnauthorized
 }: EntryDetailContentProps) {
   const { t } = useI18n();
-  const [editingField, setEditingField] = useState<"title" | "text" | null>(
-    shouldOpenTextEditorByDefault(entry) ? "text" : null
-  );
+  const [editingField, setEditingField] = useState<"title" | null>(null);
   const [titleDraft, setTitleDraft] = useState(entry.title);
   const [textDraft, setTextDraft] = useState("");
+  const [textHtmlDraft, setTextHtmlDraft] = useState("");
   const [checklistDraft, setChecklistDraft] = useState<ChecklistDraftItem[]>([]);
   const [enumerationDraft, setEnumerationDraft] = useState<EnumerationDraftItem[]>([]);
   const [tableDraft, setTableDraft] = useState<EditableCsvTable>(buildDefaultEditableTable());
@@ -689,23 +705,22 @@ export function EntryDetailContent({
     () => (entry.flag === "CHECKLIST" ? selectedChecklistResource : selectedTextResource),
     [entry.flag, selectedChecklistResource, selectedTextResource]
   );
-
   const selectedTodoListText = useMemo(
-    () => (entry.flag === "CHECKLIST" ? selectedChecklistResource?.textContent?.trim() ?? null : null),
+    () => (entry.flag === "CHECKLIST" ? extractPlainTextFromStoredText(selectedChecklistResource?.textContent).trim() || null : null),
     [entry.flag, selectedChecklistResource]
   );
   const selectedCsvTable = useMemo(() => {
     if (entry.flag !== "TABLE") {
       return null;
     }
-    const rawText = selectedEditableTextResource?.textContent?.trim() ?? "";
+    const rawText = extractPlainTextFromStoredText(selectedEditableTextResource?.textContent).trim();
     if (!rawText) {
       return null;
     }
     return parseCsvTable(rawText);
   }, [entry.flag, selectedEditableTextResource]);
   const selectedEnumerationItems = useMemo(
-    () => (entry.flag === "ENUMERATION" ? parseEnumerationDraft(selectedEditableTextResource?.textContent ?? "") : []),
+    () => (entry.flag === "ENUMERATION" ? parseEnumerationDraft(extractPlainTextFromStoredText(selectedEditableTextResource?.textContent)) : []),
     [entry.flag, selectedEditableTextResource]
   );
 
@@ -718,13 +733,15 @@ export function EntryDetailContent({
         : t("storage.detailDescription");
 
   useEffect(() => {
-    const baseText = selectedEditableTextResource?.textContent ?? "";
+    const baseStoredText = selectedEditableTextResource?.textContent ?? "";
+    const baseText = extractPlainTextFromStoredText(baseStoredText);
     setTitleDraft(entry.title);
     setTextDraft(baseText);
+    setTextHtmlDraft(extractEditorHtmlFromStoredText(baseStoredText));
     setChecklistDraft(parseChecklistDraft(baseText));
     setEnumerationDraft(parseEnumerationDraft(baseText));
     setTableDraft(parseEditableCsvTable(baseText));
-    setEditingField(shouldOpenTextEditorByDefault(entry) ? "text" : null);
+    setEditingField(null);
     setDetailSaveError(null);
     setDetailSaveSuccess(null);
   }, [entry, selectedEditableTextResource]);
@@ -738,21 +755,24 @@ export function EntryDetailContent({
     }
   }
 
-  function startEditingField(field: "title" | "text") {
+  function startEditingField(field: "title") {
     setEditingField(field);
     setDetailSaveError(null);
     setDetailSaveSuccess(null);
   }
 
   function cancelEditingField() {
-    const baseText = selectedEditableTextResource?.textContent ?? "";
+    const baseStoredText = selectedEditableTextResource?.textContent ?? "";
+    const baseText = extractPlainTextFromStoredText(baseStoredText);
     setTitleDraft(entry.title);
     setTextDraft(baseText);
+    setTextHtmlDraft(extractEditorHtmlFromStoredText(baseStoredText));
     setChecklistDraft(parseChecklistDraft(baseText));
     setEnumerationDraft(parseEnumerationDraft(baseText));
     setTableDraft(parseEditableCsvTable(baseText));
-    setEditingField(shouldOpenTextEditorByDefault(entry) ? "text" : null);
+    setEditingField(null);
     setDetailSaveError(null);
+    setDetailSaveSuccess(null);
   }
 
   function updateChecklistItem(index: number, patch: Partial<ChecklistDraftItem>) {
@@ -798,7 +818,7 @@ export function EntryDetailContent({
       await updateEntryTitle(entry.id, nextTitle);
       await onEntriesUpdated();
 
-      setEditingField(shouldOpenTextEditorByDefault(entry) ? "text" : null);
+      setEditingField(null);
       setDetailSaveSuccess(t("storage.detailSaved"));
     } catch (requestError) {
       if (isApiError(requestError) && requestError.status === 401) {
@@ -812,7 +832,7 @@ export function EntryDetailContent({
   }
 
   async function saveTextChanges() {
-    const nextText = (() => {
+    const nextStoredText = (() => {
       if (entry.flag === "CHECKLIST") {
         return serializeChecklistDraft(checklistDraft).trim();
       }
@@ -822,10 +842,15 @@ export function EntryDetailContent({
       if (entry.flag === "ENUMERATION") {
         return serializeEnumerationDraft(enumerationDraft).trim();
       }
-      return textDraft.trim();
+      return supportsRichTextEntryFlag(entry.flag)
+        ? serializeRichTextPayload(textHtmlDraft, textDraft)
+        : textDraft.trim();
     })();
+    const nextPlainText = supportsRichTextEntryFlag(entry.flag)
+      ? textDraft.trim()
+      : nextStoredText.trim();
 
-    if (!nextText) {
+    if (!nextPlainText) {
       setDetailSaveError(t("entries.textRequired"));
       return;
     }
@@ -838,18 +863,17 @@ export function EntryDetailContent({
       if (selectedEditableTextResource) {
         await updateTextResource(entry.id, selectedEditableTextResource.id, {
           title: selectedEditableTextResource.title ?? undefined,
-          textContent: nextText
+          textContent: nextStoredText
         });
       } else {
         await createTextResource(entry.id, {
           title: entry.flag === "CHECKLIST" ? "Checklist" : undefined,
-          textContent: nextText
+          textContent: nextStoredText
         });
       }
 
       await onEntriesUpdated();
 
-      setEditingField(shouldOpenTextEditorByDefault(entry) ? "text" : null);
       setDetailSaveSuccess(t("storage.detailSaved"));
     } catch (requestError) {
       if (isApiError(requestError) && requestError.status === 401) {
@@ -935,7 +959,7 @@ export function EntryDetailContent({
           <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
             {textDetailLabel}
           </p>
-          {editingField === "text" ? (
+          {true ? (
             <div className="mt-2 grid gap-2">
               {entry.flag === "CHECKLIST" ? (
                 <div className="grid gap-3">
@@ -1156,15 +1180,19 @@ export function EntryDetailContent({
                   />
                 </div>
               ) : (
-                <textarea
-                  value={textDraft}
-                  onChange={(event) => {
-                    setTextDraft(event.target.value);
+                <Editor
+                  readOnly={savingField === "text"}
+                  showHeader
+                  placeholder={t("storage.detailDescription")}
+                  headerTemplate={detailEditorHeader}
+                  value={textHtmlDraft || extractEditorHtmlFromStoredText(textDraft)}
+                  className="w-full title-input-editor"
+                  style={{ height: "240px" }}
+                  onTextChange={(event) => {
+                    setTextDraft(event.htmlValue ? event.textValue.replace(/\r\n/g, "\n").replace(/\n$/, "") : "");
+                    setTextHtmlDraft(event.htmlValue ?? "");
                     clearTextFeedback();
                   }}
-                  className="w-full rounded-control border border-brand-200 bg-white/25 px-3 py-2.5 text-body text-ink-800 shadow-sm outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:opacity-70 resize-none min-h-[160px] max-h-[300px] overflow-y-scroll"
-                  aria-label={t("storage.detailDescription")}
-                  disabled={savingField === "text"}
                 />
               )}
               <div className="flex items-center justify-end gap-2">
@@ -1219,7 +1247,7 @@ export function EntryDetailContent({
                   <table className="w-max min-w-full border-collapse text-sm">
                     <thead className="bg-brand-50">
                       <tr>
-                        {selectedCsvTable.headers.map((header, index) => (
+                        {selectedCsvTable!.headers.map((header, index) => (
                           <th
                             key={`csv-h-${index}`}
                             className="max-w-[10rem] border-b border-brand-200 px-3 py-2 text-left font-semibold text-ink-800"
@@ -1232,7 +1260,7 @@ export function EntryDetailContent({
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedCsvTable.rows.map((row, rowIndex) => (
+                      {selectedCsvTable!.rows.map((row, rowIndex) => (
                         <tr key={`csv-r-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
                           {row.map((cell, cellIndex) => (
                             <td
@@ -1251,7 +1279,7 @@ export function EntryDetailContent({
                 </div>
               ) : entry.flag === "CHECKLIST" && selectedTodoListText ? (
                 <AnimatedList
-                  items={selectedTodoListText.split(/\r?\n/).filter((line) => line.trim().length > 0)}
+                  items={selectedTodoListText!.split(/\r?\n/).filter((line) => line.trim().length > 0)}
                   showGradients
                   enableArrowNavigation={false}
                   displayScrollbar
@@ -1298,16 +1326,6 @@ export function EntryDetailContent({
             </>
           )}
         </div>
-        {editingField !== "text" && !shouldOpenTextEditorByDefault(entry) && (
-          <button
-            type="button"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-            aria-label={t("storage.editFieldAria")}
-            onClick={() => startEditingField("text")}
-          >
-            <PencilSquareIcon className="h-5 w-5" />
-          </button>
-        )}
       </article>
 
       {selectedEntryMedia.length > 0 && (

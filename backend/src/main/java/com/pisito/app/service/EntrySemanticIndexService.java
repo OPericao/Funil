@@ -8,6 +8,7 @@ import com.pisito.app.model.LinkResource;
 import com.pisito.app.model.MediaResource;
 import com.pisito.app.model.Resource;
 import com.pisito.app.model.TextResource;
+import com.pisito.app.util.RichTextContentUtils;
 import com.pisito.app.repository.EntryEmbeddingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -169,7 +170,7 @@ public class EntrySemanticIndexService {
             appendLine(lines, "Titulo recurso", resource.getTitle());
 
             if (resource instanceof TextResource textResource) {
-                appendLine(lines, "Texto", textResource.getTextContent());
+                appendLine(lines, "Texto", RichTextContentUtils.extractPlainText(textResource.getTextContent()));
             } else if (resource instanceof LinkResource linkResource) {
                 appendLine(lines, "URL", linkResource.getUrl());
                 appendLine(lines, "Sitio", linkResource.getSiteName());
@@ -204,7 +205,7 @@ public class EntrySemanticIndexService {
             appendEmbeddingLine(lines, "Titulo recurso", resource.getTitle(), 1);
 
             if (resource instanceof TextResource textResource) {
-                appendEmbeddingLine(lines, "Contenido", truncateForEmbedding(textResource.getTextContent(), 900), 1);
+                appendEmbeddingLine(lines, "Contenido", truncateForEmbedding(RichTextContentUtils.extractPlainText(textResource.getTextContent()), 900), 1);
             } else if (resource instanceof LinkResource linkResource) {
                 appendEmbeddingLine(lines, "Contenido", truncateForEmbedding(linkResource.getDescription(), 320), 1);
                 appendEmbeddingLine(lines, "Contenido", truncateForEmbedding(linkResource.getContentPreview(), 700), 1);
@@ -251,7 +252,7 @@ public class EntrySemanticIndexService {
         for (Resource resource : entry.getResources()) {
             parts.add(resource.getTitle());
             if (resource instanceof TextResource textResource) {
-                parts.add(truncateForEmbedding(textResource.getTextContent(), 400));
+                parts.add(truncateForEmbedding(RichTextContentUtils.extractPlainText(textResource.getTextContent()), 400));
             } else if (resource instanceof LinkResource linkResource) {
                 parts.add(truncateForEmbedding(linkResource.getDescription(), 220));
                 parts.add(truncateForEmbedding(linkResource.getContentPreview(), 400));

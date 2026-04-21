@@ -1,5 +1,6 @@
 import { useI18n } from "../../i18n/I18nProvider";
 import type { EntryItem } from "../../types/resource";
+import { extractPlainTextFromStoredText } from "../../utils/richText";
 import { dangerButtonClass, ghostButtonClass } from "../ui/styles";
 
 type EntriesListProps = {
@@ -29,7 +30,7 @@ export function EntriesList({ entries, busy, onDeleteEntry, onDeleteResource }: 
                 </span>
                 <span className="break-all">
                   {resource.title ? `${resource.title} - ` : ""}
-                  {resource.textContent || resource.url || resource.storageKey || t("entries.noContent")}
+                  {extractPlainTextFromStoredText(resource.textContent) || resource.url || resource.storageKey || t("entries.noContent")}
                 </span>
                 <button
                   type="button"

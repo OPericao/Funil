@@ -12,6 +12,7 @@ import com.pisito.app.controller.dto.explore.ExploreRecommendationsResponse;
 import com.pisito.app.controller.dto.explore.ExploreSourceResponse;
 import com.pisito.app.controller.dto.explore.ExploreSuggestionsResponse;
 import com.pisito.app.controller.dto.resource.ResourceResponse;
+import com.pisito.app.util.RichTextContentUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -1016,7 +1017,7 @@ public class ExploreService {
 
         for (ResourceResponse resource : entry.resources()) {
             appendIfPresent(parts, resource.title());
-            appendIfPresent(parts, resource.textContent());
+            appendIfPresent(parts, RichTextContentUtils.extractPlainText(resource.textContent()));
             appendIfPresent(parts, resource.description());
             appendIfPresent(parts, resource.contentPreview());
             appendIfPresent(parts, resource.siteName());

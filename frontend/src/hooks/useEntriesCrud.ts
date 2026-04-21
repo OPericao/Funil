@@ -13,6 +13,7 @@ import { INITIAL_RESOURCE_FORM, type ResourceFormValues } from "../features/cont
 import { useI18n } from "../i18n/I18nProvider";
 import type { EntryItem } from "../types/resource";
 import { readErrorMessage } from "../utils/error";
+import { serializeRichTextPayload, supportsRichTextEntryFlag } from "../utils/richText";
 
 type UseEntriesCrudOptions = {
   enabled: boolean;
@@ -58,6 +59,7 @@ export function useEntriesCrud({ enabled, onUnauthorized }: UseEntriesCrudOption
       ...previous,
       title: "",
       textContent: "",
+      textContentHtml: "",
       url: "",
       storageKey: "",
       fileName: "",
@@ -145,6 +147,7 @@ export function useEntriesCrud({ enabled, onUnauthorized }: UseEntriesCrudOption
         type,
         title,
         textContent,
+        textContentHtml,
         url,
         storageKey,
         fileName,
@@ -164,7 +167,13 @@ export function useEntriesCrud({ enabled, onUnauthorized }: UseEntriesCrudOption
           if (!textContent.trim()) {
             throw new Error(t("entries.textRequired"));
           }
-          await createTextResource(selectedEntryId, { title, textContent });
+          const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) ?? null;
+          await createTextResource(selectedEntryId, {
+            title,
+            textContent: supportsRichTextEntryFlag(selectedEntry?.flag)
+              ? serializeRichTextPayload(textContentHtml, textContent)
+              : textContent
+          });
         } else if (type === "LINK") {
           if (!url.trim()) {
             throw new Error(t("entries.linkRequired"));
@@ -190,7 +199,7 @@ export function useEntriesCrud({ enabled, onUnauthorized }: UseEntriesCrudOption
         setSending(false);
       }
     },
-    [handleRequestError, loadEntries, resetResourceFields, resourceForm, t]
+    [entries, handleRequestError, loadEntries, resetResourceFields, resourceForm, t]
   );
 
   const onDeleteResource = useCallback(

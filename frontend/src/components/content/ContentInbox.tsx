@@ -239,9 +239,18 @@ export function ContentInbox({
       );
     }
 
+    const panelPaddingClass =
+      section === "inbox"
+        ? "scrollbar-brand h-full overflow-y-auto px-4 pb-24 pt-4 sm:px-6 sm:pb-8"
+        : "scrollbar-brand h-full overflow-y-auto px-4 py-4 sm:px-6";
+    const panelBodyClass =
+      section === "inbox"
+        ? "mx-auto flex min-h-full w-full max-w-[940px] origin-top flex-col py-2"
+        : "mx-auto w-full max-w-[940px] origin-top scale-[1.08] py-2";
+
     return (
-      <div className="scrollbar-brand h-full overflow-y-auto px-4 py-4 sm:px-6">
-        <div className="mx-auto w-full max-w-[940px] origin-top scale-[1.08] py-2">
+      <div className={panelPaddingClass}>
+        <div className={panelBodyClass}>
           {renderSectionContent(section)}
         </div>
       </div>

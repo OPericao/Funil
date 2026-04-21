@@ -1,5 +1,6 @@
 import type { Edge } from "@xyflow/react";
-import type { EntryItem, EntryRelationshipItem, ResourceItem } from "../../../types/resource";
+import type { EntryItem, EntryRelationshipItem, ResourceItem } from "../types/resource";
+import { extractPlainTextFromStoredText } from "./richText";
 
 type GraphEdgeData = {
   score: number;
@@ -39,7 +40,7 @@ function buildEntryCorpus(entry: EntryItem) {
   for (const resource of entry.resources) {
     parts.push(
       resource.title ?? "",
-      resource.textContent ?? "",
+      extractPlainTextFromStoredText(resource.textContent),
       resource.url ?? "",
       resource.siteName ?? "",
       resource.description ?? "",

@@ -7,6 +7,7 @@ export type ProfileFormSection = "username" | "password";
 export const INITIAL_INBOX_ENTRY_FORM: InboxEntryFormValues = {
   title: "",
   textContent: "",
+  textContentHtml: "",
   mediaFiles: [],
   selectedPrimaryOption: null,
   alarmEnabled: false
@@ -44,7 +45,7 @@ export function footerButtonClass(active: boolean, withRightBorder: boolean) {
     footerButtonBaseClass,
     withRightBorder ? "border-r border-brand-200" : "",
     active
-      ? "bg-[#111827] text-white"
+      ? "bg-brand-100 text-[#111827] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
       : "bg-white/85 text-ink-700 hover:border-[rgba(255,255,255,0.3)] hover:bg-[rgba(170,170,170,0.52)] hover:text-ink-900 hover:backdrop-blur-[20px] hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),inset_0_1px_0_rgba(255,255,255,0.5),inset_0_-1px_0_rgba(255,255,255,0.1),inset_0_0_6px_3px_rgba(255,255,255,0.3)]"
   ]
     .filter(Boolean)

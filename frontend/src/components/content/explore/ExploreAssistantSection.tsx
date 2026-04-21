@@ -12,6 +12,7 @@ import type {
   ExploreSourceItem
 } from "../../../types/resource";
 import { readErrorMessage } from "../../../utils/error";
+import { extractPlainTextFromStoredText } from "../../../utils/richText";
 import { BoltIcon, BookIcon, ChecklistIcon, LinkIcon, ListBulletIcon, MagnifyingGlassIcon, MusicalNoteIcon, RelationshipGraphIcon, TableIcon, TwitchIcon, YoutubeIcon } from "../../ui/icons";
 
 type ExploreAssistantSectionProps = {
@@ -1057,8 +1058,8 @@ export function ExploreAssistantSection({ onUnauthorized }: ExploreAssistantSect
                 {resource.title ? (
                   <p className="mt-2 text-sm font-bold text-slate-900">{resource.title}</p>
                 ) : null}
-                {resource.textContent ? (
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{resource.textContent}</p>
+                {extractPlainTextFromStoredText(resource.textContent) ? (
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{extractPlainTextFromStoredText(resource.textContent)}</p>
                 ) : null}
                 {resource.description ? (
                   <p className="mt-2 text-sm leading-6 text-slate-700">{resource.description}</p>

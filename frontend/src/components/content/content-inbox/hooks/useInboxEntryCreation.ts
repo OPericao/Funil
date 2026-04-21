@@ -4,6 +4,7 @@ import { createEntry, uploadFile } from "../../../../api/resources";
 import { useI18n } from "../../../../i18n/I18nProvider";
 import type { CreateEntryResourceInput } from "../../../../types/resource";
 import { readErrorMessage } from "../../../../utils/error";
+import { serializeRichTextPayload, supportsRichTextEntryFlag } from "../../../../utils/richText";
 import type { InboxEntryFormValues } from "../../InboxEntryCreateForm";
 import { INITIAL_INBOX_ENTRY_FORM } from "../constants";
 import { resolveEntryFlag } from "../utils";
@@ -62,7 +63,9 @@ export function useInboxEntryCreation({ onUnauthorized }: UseInboxEntryCreationP
             }
           : {
               type: "RAW",
-              textContent
+              textContent: supportsRichTextEntryFlag(activeFlag)
+                ? serializeRichTextPayload(inboxEntryForm.textContentHtml, textContent)
+                : textContent
             }
       );
     }

@@ -30,6 +30,7 @@ import {
   fetchEntryRelationships,
 } from "../../../api/resources";
 import type { EntryItem, EntryRelationshipItem, ResourceItem } from "../../../types/resource";
+import { extractPlainTextFromStoredText } from "../../../utils/richText";
 import { EntryDetailContent } from "../storage/EntryDetailContent";
 
 type GraphNodeData = {
@@ -64,7 +65,7 @@ function isChecklistResource(resource: ResourceItem) {
 function buildRelationshipEntryText(entry: EntryItem) {
   const textResources = entry.resources
     .filter((resource) => resource.type === "RAW" && !isChecklistResource(resource))
-    .map((resource) => resource.textContent?.trim() ?? "")
+    .map((resource) => extractPlainTextFromStoredText(resource.textContent).trim())
     .filter(Boolean);
 
   if (textResources.length > 0) {
@@ -73,7 +74,7 @@ function buildRelationshipEntryText(entry: EntryItem) {
 
   for (const resource of entry.resources) {
     const preview =
-      resource.textContent
+      extractPlainTextFromStoredText(resource.textContent)
       ?? resource.description
       ?? resource.contentPreview
       ?? resource.url
@@ -220,7 +221,7 @@ function buildEntryCorpus(entry: EntryItem) {
   for (const resource of entry.resources) {
     parts.push(
       resource.title ?? "",
-      resource.textContent ?? "",
+      extractPlainTextFromStoredText(resource.textContent),
       resource.url ?? "",
       resource.siteName ?? "",
       resource.description ?? "",

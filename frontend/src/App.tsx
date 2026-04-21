@@ -42,9 +42,9 @@ function App() {
 
   return (
     <main className="relative min-h-screen overflow-hidden">
-      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_20%_20%,#eef6ff_0%,#dbeaf8_45%,#c7ddf1_100%)]" />
+      <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(circle_at_20%_20%,#f3fffc_0%,#d8f4ee_44%,#bde5dd_100%)]" />
       <div className="pointer-events-none fixed inset-0 z-0">
-        <Iridescence color={[0.75, 0.88, 0.98]} mouseReact={false} amplitude={0.06} speed={0.65} />
+        <Iridescence color={[0.56, 0.85, 0.8]} mouseReact={false} amplitude={0.035} speed={0.45} />
       </div>
       <div className="relative z-10">
       <Routes>

@@ -5,6 +5,7 @@ export type ResourceFormValues = {
   type: ResourceType;
   title: string;
   textContent: string;
+  textContentHtml: string;
   url: string;
   storageKey: string;
   fileName: string;
@@ -16,6 +17,7 @@ export const INITIAL_RESOURCE_FORM: ResourceFormValues = {
   type: "RAW",
   title: "",
   textContent: "",
+  textContentHtml: "",
   url: "",
   storageKey: "",
   fileName: "",

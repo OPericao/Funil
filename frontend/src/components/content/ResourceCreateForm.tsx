@@ -1,8 +1,10 @@
-import { FormEvent } from "react";
+import { FormEvent, useMemo } from "react";
+import { Editor } from "primereact/editor";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { EntryItem, ResourceType } from "../../types/resource";
 import type { ResourceFormValues } from "../../features/content/resourceForm";
 import { formStackClass, inputClass, primaryButtonClass, textareaClass } from "../ui/styles";
+import { extractEditorHtmlFromStoredText, supportsRichTextEntryFlag } from "../../utils/richText";
 
 type ResourceCreateFormProps = {
   entries: EntryItem[];
@@ -20,6 +22,21 @@ export function ResourceCreateForm({
   onChange
 }: ResourceCreateFormProps) {
   const { t } = useI18n();
+  const selectedEntry = useMemo(
+    () => entries.find((entry) => entry.id === values.selectedEntryId) ?? null,
+    [entries, values.selectedEntryId]
+  );
+  const canUseRichTextEditor = values.type === "RAW" && supportsRichTextEntryFlag(selectedEntry?.flag);
+
+  const editorHeader = (
+    <span className="ql-formats">
+      <button type="button" className="ql-bold" aria-label="Bold" />
+      <button type="button" className="ql-italic" aria-label="Italic" />
+      <button type="button" className="ql-underline" aria-label="Underline" />
+      <button type="button" className="ql-list" value="bullet" aria-label="Bullet list" />
+      <button type="button" className="ql-list" value="ordered" aria-label="Ordered list" />
+    </span>
+  );
 
   return (
     <form className={formStackClass} onSubmit={onSubmit}>
@@ -57,13 +74,30 @@ export function ResourceCreateForm({
         onChange={(event) => onChange({ title: event.target.value })}
       />
 
-      {(values.type === "RAW") && (
-        <textarea
-          placeholder={t("resourceCreate.textPlaceholder")}
-          className={textareaClass}
-          value={values.textContent}
-          onChange={(event) => onChange({ textContent: event.target.value })}
-        />
+      {values.type === "RAW" && (
+        canUseRichTextEditor ? (
+          <Editor
+            readOnly={submitting}
+            showHeader
+            placeholder={t("resourceCreate.textPlaceholder")}
+            headerTemplate={editorHeader}
+            value={values.textContentHtml || extractEditorHtmlFromStoredText(values.textContent)}
+            className="w-full title-input-editor"
+            style={{ height: "220px" }}
+            onTextChange={(event) =>
+              onChange({
+                textContent: event.htmlValue ? event.textValue.replace(/\r\n/g, "\n").replace(/\n$/, "") : "",
+                textContentHtml: event.htmlValue ?? ""
+              })}
+          />
+        ) : (
+          <textarea
+            placeholder={t("resourceCreate.textPlaceholder")}
+            className={textareaClass}
+            value={values.textContent}
+            onChange={(event) => onChange({ textContent: event.target.value, textContentHtml: "" })}
+          />
+        )
       )}
 
       {values.type === "LINK" && (

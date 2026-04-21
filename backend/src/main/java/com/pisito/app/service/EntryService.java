@@ -25,6 +25,7 @@ import com.pisito.app.repository.EntryRepository;
 import com.pisito.app.repository.ResourceRepository;
 import com.pisito.app.repository.TagRepository;
 import com.pisito.app.repository.UserRepository;
+import com.pisito.app.util.RichTextContentUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -287,7 +288,7 @@ public class EntryService {
         List<String> uploadedFileNames = new ArrayList<>();
         for (CreateEntryResourceRequest resourceRequest : request.getResources()) {
             if ((youtubeFlag || twitchFlag) && isTextResourceType(resourceRequest.getType())) {
-                String rawText = trimOrNull(resourceRequest.getTextContent());
+                String rawText = trimOrNull(RichTextContentUtils.extractPlainText(resourceRequest.getTextContent()));
                 if (firstTextContent == null && StringUtils.hasText(rawText)) {
                     firstTextContent = rawText;
                 }
@@ -305,14 +306,14 @@ public class EntryService {
             if (firstTextContent == null
                 && resource instanceof TextResource textResource
                 && StringUtils.hasText(textResource.getTextContent())) {
-                firstTextContent = textResource.getTextContent().trim();
+                firstTextContent = RichTextContentUtils.extractPlainText(textResource.getTextContent());
             }
             if (resource instanceof TextResource textResource
                 && StringUtils.hasText(textResource.getTextContent())) {
                 if (!allTextContent.isEmpty()) {
                     allTextContent.append('\n');
                 }
-                allTextContent.append(textResource.getTextContent().trim());
+                allTextContent.append(RichTextContentUtils.extractPlainText(textResource.getTextContent()));
             }
             if (resource instanceof LinkResource linkResource) {
                 String linkContext = buildLinkContext(linkResource);
