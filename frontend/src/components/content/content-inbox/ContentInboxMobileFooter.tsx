@@ -1,7 +1,7 @@
 import { useI18n } from "../../../i18n/I18nProvider";
 import {
+  CompassIcon,
   InboxArrowDownIcon,
-  MagnifyingGlassIcon,
   RelationshipGraphIcon,
   UserIcon
 } from "../../ui/icons";
@@ -19,7 +19,7 @@ const mobileNavSections: Array<{
   icon: any;
   labelKey: "footer.explore" | "footer.storage" | "footer.inbox" | "footer.relationshipGraph" | "footer.profile";
 }> = [
-  { section: "explore", withRightBorder: true, icon: MagnifyingGlassIcon, labelKey: "footer.explore" },
+  { section: "explore", withRightBorder: true, icon: CompassIcon, labelKey: "footer.explore" },
   { section: "storage", withRightBorder: true, icon: StorageTabIcon, labelKey: "footer.storage" },
   { section: "inbox", withRightBorder: true, icon: InboxArrowDownIcon, labelKey: "footer.inbox" },
   {

@@ -4,9 +4,9 @@ import { useI18n } from "../../../i18n/I18nProvider";
 import type { I18nKey } from "../../../i18n/messages";
 import type { EntryItem } from "../../../types/resource";
 import {
+  CompassIcon,
   Cog6ToothIcon,
   InboxArrowDownIcon,
-  MagnifyingGlassIcon,
   NotificationBellIcon,
   RelationshipGraphIcon,
   UserIcon
@@ -34,7 +34,7 @@ const desktopNavSections: Array<{
   icon: any;
   ariaKey: I18nKey;
 }> = [
-  { section: "explore", icon: MagnifyingGlassIcon, ariaKey: "footer.explore" },
+  { section: "explore", icon: CompassIcon, ariaKey: "footer.explore" },
   { section: "storage", icon: StorageTabIcon, ariaKey: "footer.storage" },
   { section: "inbox", icon: InboxArrowDownIcon, ariaKey: "footer.inbox" },
   { section: "relationshipGraph", icon: RelationshipGraphIcon, ariaKey: "footer.relationshipGraph" },

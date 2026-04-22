@@ -1,5 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { ReactNode, forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Editor } from "primereact/editor";
+import { Panel } from "primereact/panel";
 import { isApiError } from "../../../api/client";
 import { createTextResource, updateEntryTitle, updateTextResource } from "../../../api/resources";
 import { useI18n } from "../../../i18n/I18nProvider";
@@ -12,10 +13,9 @@ import {
   serializeRichTextPayload,
   supportsRichTextEntryFlag
 } from "../../../utils/richText";
-import { errorTextClass, inputClass } from "../../ui/styles";
+import { errorTextClass } from "../../ui/styles";
 import {
   ArrowDownTrayIcon,
-  PencilSquareIcon,
   TrashIcon,
   TwitchIcon,
   XMarkIcon
@@ -30,6 +30,7 @@ type EntryDetailContentProps = {
   onEntriesUpdated: () => Promise<void> | void;
   onEntryUpdated?: (entryId: number) => Promise<void> | void;
   onUnauthorized: () => void;
+  headerActions?: ReactNode;
 };
 
 export type EntryDetailContentHandle = {
@@ -500,10 +501,10 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
   entry,
   onEntriesUpdated,
   onEntryUpdated,
-  onUnauthorized
+  onUnauthorized,
+  headerActions
 }, ref) {
   const { t } = useI18n();
-  const [editingField, setEditingField] = useState<"title" | null>(null);
   const [titleDraft, setTitleDraft] = useState(entry.title);
   const [textDraft, setTextDraft] = useState("");
   const [textHtmlDraft, setTextHtmlDraft] = useState("");
@@ -541,8 +542,6 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
     return html.length > 0 ? html : null;
   }, [selectedTextResource]);
 
-  const textDetailLabel = entry.flag === "TABLE" ? t("storage.detailTable") : t("storage.detailDescription");
-
   useEffect(() => {
     const baseStoredText = selectedTextResource?.textContent ?? "";
     const baseText = extractPlainTextFromStoredText(baseStoredText);
@@ -550,7 +549,6 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
     setTextDraft(baseText);
     setTextHtmlDraft(extractEditorHtmlFromStoredText(baseStoredText));
     setTableDraft(parseEditableCsvTable(baseText));
-    setEditingField(null);
     setDetailSaveError(null);
     setDetailSaveSuccess(null);
   }, [entry, selectedTextResource]);
@@ -562,24 +560,6 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
     if (detailSaveSuccess) {
       setDetailSaveSuccess(null);
     }
-  }
-
-  function startEditingField(field: "title") {
-    setEditingField(field);
-    setDetailSaveError(null);
-    setDetailSaveSuccess(null);
-  }
-
-  function cancelEditingField() {
-    const baseStoredText = selectedTextResource?.textContent ?? "";
-    const baseText = extractPlainTextFromStoredText(baseStoredText);
-    setTitleDraft(entry.title);
-    setTextDraft(baseText);
-    setTextHtmlDraft(extractEditorHtmlFromStoredText(baseStoredText));
-    setTableDraft(parseEditableCsvTable(baseText));
-    setEditingField(null);
-    setDetailSaveError(null);
-    setDetailSaveSuccess(null);
   }
 
   function updateTableHeader(index: number, value: string) {
@@ -600,43 +580,19 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
     clearTextFeedback();
   }
 
-  async function saveTitleChanges() {
-    const nextTitle = titleDraft.trim();
-    if (!nextTitle) {
-      setDetailSaveError(t("inbox.titleRequired"));
-      return;
-    }
-
-    try {
-      setSavingField("title");
-      setDetailSaveError(null);
-      setDetailSaveSuccess(null);
-
-      await updateEntryTitle(entry.id, nextTitle);
-      if (onEntryUpdated) {
-        await onEntryUpdated(entry.id);
-      } else {
-        await onEntriesUpdated();
-      }
-
-      setEditingField(null);
-      setDetailSaveSuccess(t("storage.detailSaved"));
-    } catch (requestError) {
-      if (isApiError(requestError) && requestError.status === 401) {
-        onUnauthorized();
-        return;
-      }
-      setDetailSaveError(readErrorMessage(requestError, t("common.unexpectedError")));
-    } finally {
-      setSavingField(null);
-    }
-  }
 
   async function saveTextChanges() {
     if (pendingTextSaveRef.current) {
       return pendingTextSaveRef.current;
     }
 
+    const nextTitle = titleDraft.trim();
+    if (!nextTitle) {
+      setDetailSaveError(t("inbox.titleRequired"));
+      return false;
+    }
+
+    const titleChanged = nextTitle !== entry.title;
     const nextStoredText = (() => {
       if (entry.flag === "TABLE") {
         return serializeEditableCsvTable(tableDraft).trim();
@@ -645,16 +601,12 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
         ? serializeRichTextPayload(textHtmlDraft, textDraft)
         : textDraft.trim();
     })();
-    const nextPlainText = supportsRichTextEntryFlag(entry.flag)
-      ? textDraft.trim()
-      : nextStoredText.trim();
     const currentStoredText = selectedTextResource?.textContent ?? "";
+    const textChanged = selectedTextResource
+      ? nextStoredText !== currentStoredText
+      : nextStoredText.length > 0;
 
-    if (!selectedTextResource && nextStoredText.length === 0) {
-      return true;
-    }
-
-    if (selectedTextResource && nextStoredText === currentStoredText) {
+    if (!titleChanged && !textChanged) {
       return true;
     }
 
@@ -664,15 +616,21 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
         setDetailSaveError(null);
         setDetailSaveSuccess(null);
 
-        if (selectedTextResource) {
-          await updateTextResource(entry.id, selectedTextResource.id, {
-            title: selectedTextResource.title ?? undefined,
-            textContent: nextStoredText
-          });
-        } else {
-          await createTextResource(entry.id, {
-            textContent: nextStoredText
-          });
+        if (titleChanged) {
+          await updateEntryTitle(entry.id, nextTitle);
+        }
+
+        if (textChanged) {
+          if (selectedTextResource) {
+            await updateTextResource(entry.id, selectedTextResource.id, {
+              title: selectedTextResource.title ?? undefined,
+              textContent: nextStoredText
+            });
+          } else {
+            await createTextResource(entry.id, {
+              textContent: nextStoredText
+            });
+          }
         }
 
         if (onEntryUpdated) {
@@ -705,256 +663,212 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
 
   return (
     <div className="grid gap-3">
-      <article className="flex items-start justify-between gap-3 rounded-[24px] border border-white/85 bg-[linear-gradient(180deg,rgba(252,250,246,0.94)_0%,rgba(239,244,249,0.9)_100%)] p-3 shadow-[0_16px_30px_rgba(15,23,42,0.08)] backdrop-blur-md">
-        <div className="min-w-0 w-full">
-          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-            {t("storage.detailEntryTitle")}
-          </p>
-          {editingField === "title" ? (
-            <div className="mt-2 grid gap-2">
-              <input
-                type="text"
-                value={titleDraft}
-                onChange={(event) => {
-                  setTitleDraft(event.target.value);
-                  if (detailSaveError) {
-                    setDetailSaveError(null);
-                  }
-                  if (detailSaveSuccess) {
-                    setDetailSaveSuccess(null);
-                  }
-                }}
-                className={inputClass}
-                aria-label={t("storage.detailEntryTitle")}
-                disabled={savingField === "title"}
-              />
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                  onClick={cancelEditingField}
-                  disabled={savingField === "title"}
-                >
-                  {t("common.cancel")}
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex h-9 items-center justify-center rounded-control border border-brand-500 bg-brand-500 px-3 text-sm font-semibold text-white transition hover:bg-brand-600"
-                  onClick={() => void saveTitleChanges()}
-                  disabled={savingField === "title"}
-                >
-                  {savingField === "title" ? t("common.saving") : t("common.save")}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <p className="break-all whitespace-pre-wrap text-base font-normal text-ink-900">
-              {entry.title}
-            </p>
-          )}
-        </div>
-        {editingField !== "title" && (
-          <button
-            type="button"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-            aria-label={t("storage.editFieldAria")}
-            onClick={() => startEditingField("title")}
-          >
-            <PencilSquareIcon className="h-5 w-5" />
-          </button>
-        )}
-      </article>
-
-      <article className="flex min-w-0 items-start justify-between gap-3 overflow-hidden p-3" style={{
-        background: "rgba(255, 255, 255, 0.77)",
-        backdropFilter: "blur(10px)",
-        WebkitBackdropFilter: "blur(10px)",
-        borderRadius: "16px",
-        border: "1px solid rgba(255, 255, 255, 0.3)"
-      }}>
-        <div className="min-w-0 w-full overflow-hidden">
-          <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
-            {textDetailLabel}
-          </p>
-          {true ? (
-            <div className="mt-2 grid gap-2">
-              {entry.flag === "TABLE" ? (
-                <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
-                  <div className="scrollbar-brand max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
-                    <table className="w-max min-w-full border-collapse text-sm">
-                      <thead className="bg-brand-50">
-                        <tr>
-                          {tableDraft.headers.map((header, index) => (
-                            <th key={`table-edit-h-${index}`} className="border-b border-brand-200 px-2 py-2 align-top">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={header}
-                                  onChange={(event) => updateTableHeader(index, event.target.value)}
-                                  className="w-[8rem] min-w-[8rem] max-w-[10rem] rounded-control border border-brand-200 bg-white px-2 py-1 text-sm text-ink-800 outline-none focus:border-brand-500"
-                                  disabled={savingField === "text"}
-                                />
+      <Panel
+        header={
+          <div className="flex items-center justify-between gap-2">
+            <input
+              type="text"
+              value={titleDraft}
+              onChange={(event) => {
+                setTitleDraft(event.target.value);
+                if (detailSaveError) {
+                  setDetailSaveError(null);
+                }
+                if (detailSaveSuccess) {
+                  setDetailSaveSuccess(null);
+                }
+              }}
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left text-base font-semibold text-ink-900 shadow-none outline-none ring-0 placeholder:text-ink-500 focus:border-0 focus:outline-none focus:ring-0 sm:text-lg"
+              aria-label={t("storage.detailEntryTitle")}
+              disabled={savingField !== null}
+            />
+            {headerActions ? <div className="shrink-0">{headerActions}</div> : null}
+          </div>
+        }
+        className="notes-panel"
+      >
+        <div className="grid gap-4">
+          <div className="min-w-0 w-full overflow-hidden">
+            {true ? (
+              <div className="grid gap-2">
+                {entry.flag === "TABLE" ? (
+                  <div className="scrollbar-brand grid max-h-72 gap-3 overflow-y-auto pr-1">
+                    <div className="scrollbar-brand max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
+                      <table className="w-max min-w-full border-collapse text-sm">
+                        <thead className="bg-brand-50">
+                          <tr>
+                            {tableDraft.headers.map((header, index) => (
+                              <th key={`table-edit-h-${index}`} className="border-b border-brand-200 px-2 py-2 align-top">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={header}
+                                    onChange={(event) => updateTableHeader(index, event.target.value)}
+                                    className="w-[8rem] min-w-[8rem] max-w-[10rem] rounded-control border border-brand-200 bg-white px-2 py-1 text-sm text-ink-800 outline-none focus:border-brand-500"
+                                    disabled={savingField === "text"}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition hover:bg-brand-100"
+                                    onClick={() => {
+                                      setTableDraft((current) => {
+                                        if (current.headers.length <= 1) {
+                                          return current;
+                                        }
+                                        return {
+                                          ...current,
+                                          headers: current.headers.filter((_, headerIndex) => headerIndex !== index),
+                                          rows: current.rows.map((row) => row.filter((_, cellIndex) => cellIndex !== index))
+                                        };
+                                      });
+                                      clearTextFeedback();
+                                    }}
+                                    disabled={savingField === "text" || tableDraft.headers.length <= 1}
+                                  >
+                                    <XMarkIcon className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tableDraft.rows.map((row, rowIndex) => (
+                            <tr key={`table-edit-row-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
+                              {row.map((cell, cellIndex) => (
+                                <td key={`table-edit-cell-${rowIndex}-${cellIndex}`} className="border-b border-brand-100 px-2 py-2">
+                                  <input
+                                    type="text"
+                                    value={cell}
+                                    onChange={(event) => updateTableCell(rowIndex, cellIndex, event.target.value)}
+                                    className="w-[8rem] min-w-[8rem] max-w-[10rem] rounded-control border border-brand-200 bg-white px-2 py-1 text-sm text-ink-800 outline-none focus:border-brand-500"
+                                    disabled={savingField === "text"}
+                                  />
+                                </td>
+                              ))}
+                              <td className="border-b border-brand-100 px-2 py-2">
                                 <button
                                   type="button"
                                   className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition hover:bg-brand-100"
                                   onClick={() => {
-                                    setTableDraft((current) => {
-                                      if (current.headers.length <= 1) {
-                                        return current;
-                                      }
-                                      return {
-                                        ...current,
-                                        headers: current.headers.filter((_, headerIndex) => headerIndex !== index),
-                                        rows: current.rows.map((row) => row.filter((_, cellIndex) => cellIndex !== index))
-                                      };
-                                    });
+                                    setTableDraft((current) => ({
+                                      ...current,
+                                      rows: current.rows.filter((_, currentRowIndex) => currentRowIndex !== rowIndex)
+                                    }));
                                     clearTextFeedback();
                                   }}
-                                  disabled={savingField === "text" || tableDraft.headers.length <= 1}
+                                  disabled={savingField === "text"}
                                 >
-                                  <XMarkIcon className="h-4 w-4" />
+                                  <TrashIcon className="h-4 w-4" />
                                 </button>
-                              </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
+                        onClick={() => {
+                          setTableDraft((current) => ({
+                            ...current,
+                            headers: [...current.headers, `Col ${current.headers.length + 1}`],
+                            rows: current.rows.map((row) => [...row, ""])
+                          }));
+                          clearTextFeedback();
+                        }}
+                        disabled={savingField === "text"}
+                      >
+                        Anadir columna
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
+                        onClick={() => {
+                          setTableDraft((current) => ({
+                            ...current,
+                            rows: [...current.rows, Array(Math.max(1, current.headers.length)).fill("")]
+                          }));
+                          clearTextFeedback();
+                        }}
+                        disabled={savingField === "text"}
+                      >
+                        Anadir fila
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <Editor
+                    readOnly={savingField === "text"}
+                    showHeader
+                    placeholder={t("storage.detailDescription")}
+                    headerTemplate={richTextEditorHeader}
+                    value={textHtmlDraft || extractEditorHtmlFromStoredText(textDraft)}
+                    className="w-full title-input-editor"
+                    style={{ height: "240px" }}
+                    onTextChange={(event) => {
+                      setTextDraft(event.htmlValue ? event.textValue.replace(/\r\n/g, "\n").replace(/\n$/, "") : "");
+                      setTextHtmlDraft(event.htmlValue ?? "");
+                      clearTextFeedback();
+                    }}
+                  />
+                )}
+              </div>
+            ) : (
+              <>
+                {entry.flag === "TABLE" && selectedCsvTable ? (
+                  <div className="scrollbar-brand mt-2 max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
+                    <table className="w-max min-w-full border-collapse text-sm">
+                      <thead className="bg-brand-50">
+                        <tr>
+                          {selectedCsvTable!.headers.map((header, index) => (
+                            <th
+                              key={`csv-h-${index}`}
+                              className="max-w-[10rem] border-b border-brand-200 px-3 py-2 text-left font-semibold text-ink-800"
+                            >
+                              <span className="block max-w-[10rem] break-words whitespace-pre-wrap">
+                                {header || `Col ${index + 1}`}
+                              </span>
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {tableDraft.rows.map((row, rowIndex) => (
-                          <tr key={`table-edit-row-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
+                        {selectedCsvTable!.rows.map((row, rowIndex) => (
+                          <tr key={`csv-r-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
                             {row.map((cell, cellIndex) => (
-                              <td key={`table-edit-cell-${rowIndex}-${cellIndex}`} className="border-b border-brand-100 px-2 py-2">
-                                <input
-                                  type="text"
-                                  value={cell}
-                                  onChange={(event) => updateTableCell(rowIndex, cellIndex, event.target.value)}
-                                  className="w-[8rem] min-w-[8rem] max-w-[10rem] rounded-control border border-brand-200 bg-white px-2 py-1 text-sm text-ink-800 outline-none focus:border-brand-500"
-                                  disabled={savingField === "text"}
-                                />
+                              <td
+                                key={`csv-c-${rowIndex}-${cellIndex}`}
+                                className="max-w-[10rem] border-b border-brand-100 px-3 py-2 text-ink-700"
+                              >
+                                <span className="block max-w-[10rem] break-words whitespace-pre-wrap">
+                                  {cell}
+                                </span>
                               </td>
                             ))}
-                            <td className="border-b border-brand-100 px-2 py-2">
-                              <button
-                                type="button"
-                                className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-brand-200 text-brand-700 transition hover:bg-brand-100"
-                                onClick={() => {
-                                  setTableDraft((current) => ({
-                                    ...current,
-                                    rows: current.rows.filter((_, currentRowIndex) => currentRowIndex !== rowIndex)
-                                  }));
-                                  clearTextFeedback();
-                                }}
-                                disabled={savingField === "text"}
-                              >
-                                <TrashIcon className="h-4 w-4" />
-                              </button>
-                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                      onClick={() => {
-                        setTableDraft((current) => ({
-                          ...current,
-                          headers: [...current.headers, `Col ${current.headers.length + 1}`],
-                          rows: current.rows.map((row) => [...row, ""])
-                        }));
-                        clearTextFeedback();
-                      }}
-                      disabled={savingField === "text"}
-                    >
-                      Anadir columna
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white/25 px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50"
-                      onClick={() => {
-                        setTableDraft((current) => ({
-                          ...current,
-                          rows: [...current.rows, Array(Math.max(1, current.headers.length)).fill("")]
-                        }));
-                        clearTextFeedback();
-                      }}
-                      disabled={savingField === "text"}
-                    >
-                      Anadir fila
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <Editor
-                  readOnly={savingField === "text"}
-                  showHeader
-                  placeholder={t("storage.detailDescription")}
-                  headerTemplate={richTextEditorHeader}
-                  value={textHtmlDraft || extractEditorHtmlFromStoredText(textDraft)}
-                  className="w-full title-input-editor"
-                  style={{ height: "240px" }}
-                  onTextChange={(event) => {
-                    setTextDraft(event.htmlValue ? event.textValue.replace(/\r\n/g, "\n").replace(/\n$/, "") : "");
-                    setTextHtmlDraft(event.htmlValue ?? "");
-                    clearTextFeedback();
-                  }}
-                />
-              )}
-            </div>
-          ) : (
-            <>
-              {entry.flag === "TABLE" && selectedCsvTable ? (
-                <div className="scrollbar-brand mt-2 max-w-full overflow-x-auto overflow-y-auto rounded-control border border-brand-200">
-                  <table className="w-max min-w-full border-collapse text-sm">
-                    <thead className="bg-brand-50">
-                      <tr>
-                        {selectedCsvTable!.headers.map((header, index) => (
-                          <th
-                            key={`csv-h-${index}`}
-                            className="max-w-[10rem] border-b border-brand-200 px-3 py-2 text-left font-semibold text-ink-800"
-                          >
-                            <span className="block max-w-[10rem] break-words whitespace-pre-wrap">
-                              {header || `Col ${index + 1}`}
-                            </span>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedCsvTable!.rows.map((row, rowIndex) => (
-                        <tr key={`csv-r-${rowIndex}`} className="odd:bg-white/25 even:bg-brand-50/40">
-                          {row.map((cell, cellIndex) => (
-                            <td
-                              key={`csv-c-${rowIndex}-${cellIndex}`}
-                              className="max-w-[10rem] border-b border-brand-100 px-3 py-2 text-ink-700"
-                            >
-                              <span className="block max-w-[10rem] break-words whitespace-pre-wrap">
-                                {cell}
-                              </span>
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                selectedTextHtml ? (
-                  <div className="rich-text-display ql-snow mt-2 rounded-control border border-brand-200 bg-white/70 px-3 py-2.5 text-sm text-ink-700">
-                    <div className="ql-editor" dangerouslySetInnerHTML={{ __html: selectedTextHtml ?? "" }} />
-                  </div>
                 ) : (
-                  <p className="break-all whitespace-pre-wrap text-sm text-ink-700">
-                    {buildEntryText(entry, t("entries.noContent"))}
-                  </p>
-                )
-              )}
-            </>
-          )}
+                  selectedTextHtml ? (
+                    <div className="rich-text-display ql-snow mt-2 rounded-control border border-brand-200 bg-white/70 px-3 py-2.5 text-sm text-ink-700">
+                      <div className="ql-editor" dangerouslySetInnerHTML={{ __html: selectedTextHtml ?? "" }} />
+                    </div>
+                  ) : (
+                    <p className="break-all whitespace-pre-wrap text-sm text-ink-700">
+                      {buildEntryText(entry, t("entries.noContent"))}
+                    </p>
+                  )
+                )}
+              </>
+            )}
+          </div>
         </div>
-      </article>
+      </Panel>
 
       {selectedEntryMedia.length > 0 && (
         <article className="p-3" style={{

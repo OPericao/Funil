@@ -1,5 +1,6 @@
 import { DragEvent, FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { Editor } from "primereact/editor";
+import { Panel } from "primereact/panel";
 import { useI18n } from "../../i18n/I18nProvider";
 import { Button } from "../ui/Button";
 import { extractEditorHtmlFromStoredText } from "../../utils/richText";
@@ -7,12 +8,11 @@ import {
   AlarmClockIcon,
   FileDropIcon,
   LinkIcon,
-  MusicalNoteIcon,
   TableIcon,
   TwitchIcon,
   YoutubeIcon
 } from "../ui/icons";
-import { errorTextClass, fieldLabelClass, inputClass } from "../ui/styles";
+import { errorTextClass, inputClass } from "../ui/styles";
 import spotyIcon from "../../assets/spoty.png";
 import { richTextEditorHeader } from "./richTextEditorHeader";
 
@@ -45,8 +45,8 @@ function toggleButtonClass(active: boolean) {
   return [
     "glass-surface btn-fill-anim flex h-11 w-full items-center justify-center border transition sm:w-11",
     active
-      ? "border-black bg-black text-white shadow-[0_0_0_1px_rgba(17,24,39,0.45),0_10px_22px_rgba(15,23,42,0.18)] [--btn-fill:#111827] [--btn-text-hover:#ffffff]"
-      : "border-brand-200 bg-white text-[#111827] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
+      ? "border-black bg-white text-[#111827] shadow-[0_0_0_1px_rgba(17,24,39,0.45),0_10px_22px_rgba(15,23,42,0.18)] [--btn-fill:#e5e7eb] [--btn-text-hover:#111827] hover:border-black hover:shadow-[0_0_0_1px_rgba(17,24,39,0.55),0_14px_28px_rgba(15,23,42,0.18)]"
+      : "border-brand-200 bg-white text-[#111827] [--btn-fill:#c7f9f1] [--btn-text-hover:#111827] hover:border-brand-400 hover:shadow-[0_12px_26px_rgba(15,23,42,0.12)]"
   ].join(" ");
 }
 
@@ -165,38 +165,46 @@ export function InboxEntryCreateForm({
 
   return (
     <form className="grid min-h-full w-full gap-3 font-sans inbox-glass-text" onSubmit={handleSubmit}>
-      <section className="glass-card flex h-auto min-h-[520px] w-full max-w-full flex-1 flex-col border-white/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(240,240,240,0.92)_100%)] p-5 shadow-[0_24px_56px_rgba(15,15,15,0.12)] md:min-h-[560px] md:p-6">
-        {heading ? (
-          <div className="mb-4">
-            <h2 className="heading-title text-center text-ink-900">{heading}</h2>
-          </div>
-        ) : null}
-        
+      <Panel
+        header={heading ?? t("section.inbox")}
+        className="notes-panel h-auto min-h-[520px] w-full max-w-full flex-1 md:min-h-[560px]"
+      >
         <div className="flex flex-1 flex-col gap-4">
-          <textarea
-            maxLength={80}
-            rows={1}
-            disabled={submitting}
-            placeholder={t("inbox.titlePlaceholder")}
-            className={`${inputClass} min-h-[44px] max-h-[44px] resize-none overflow-hidden`}
-            value={values.title}
-            onChange={(event) => onChange({ title: event.target.value })}
-          />
+          <div className="grid gap-1.5">
+            <label htmlFor="inbox-entry-title" className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+              {t("inbox.titleLabel")}
+            </label>
+            <textarea
+              id="inbox-entry-title"
+              maxLength={80}
+              rows={1}
+              disabled={submitting}
+              placeholder={t("inbox.titlePlaceholder")}
+              className={`${inputClass} min-h-[44px] max-h-[44px] resize-none overflow-hidden`}
+              value={values.title}
+              onChange={(event) => onChange({ title: event.target.value })}
+            />
+          </div>
 
-          <Editor
-            readOnly={submitting}
-            showHeader
-            placeholder={t("inbox.textPlaceholder")}
-            headerTemplate={richTextEditorHeader}
-            value={values.textContentHtml || extractEditorHtmlFromStoredText(values.textContent)}
-            className="w-full flex-1 title-input-editor"
-            style={{ height: "220px" }}
-            onTextChange={(event) =>
-              onChange({
-                textContent: event.htmlValue ? event.textValue.replace(/\r\n/g, "\n").replace(/\n$/, "") : "",
-                textContentHtml: event.htmlValue ?? ""
-              })}
-          />
+          <div className="grid flex-1 gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+              {t("storage.detailDescription")}
+            </span>
+            <Editor
+              readOnly={submitting}
+              showHeader
+              placeholder={t("inbox.textPlaceholder")}
+              headerTemplate={richTextEditorHeader}
+              value={values.textContentHtml || extractEditorHtmlFromStoredText(values.textContent)}
+              className="w-full flex-1 title-input-editor"
+              style={{ height: "220px" }}
+              onTextChange={(event) =>
+                onChange({
+                  textContent: event.htmlValue ? event.textValue.replace(/\r\n/g, "\n").replace(/\n$/, "") : "",
+                  textContentHtml: event.htmlValue ?? ""
+                })}
+            />
+          </div>
 
           <div
             className="h-32"
@@ -309,7 +317,7 @@ export function InboxEntryCreateForm({
             )}
           </div>
         </div>
-      </section>
+      </Panel>
 
       <section className="glass-card h-auto w-full max-w-full overflow-visible border-white/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(238,238,238,0.92)_100%)] p-3 shadow-[0_20px_44px_rgba(15,15,15,0.10)]">
         <div className="grid grid-cols-4 gap-2 sm:flex sm:items-center sm:gap-3">

@@ -1,5 +1,8 @@
 import frameImage from "../../assets/Frame.png";
 import spotifyImage from "../../assets/spotify.svg";
+import { CompassIcon as AnimateCompassIcon } from "../animate-ui/icons/compass";
+import { LinkIcon as AnimateLinkIcon } from "../animate-ui/icons/link";
+import { TimerIcon as AnimateTimerIcon } from "../animate-ui/icons/timer";
 
 export {
   ArrowDownTrayIcon,
@@ -10,7 +13,6 @@ export {
   Cog6ToothIcon,
   InboxArrowDownIcon,
   ListBulletIcon,
-  LinkIcon,
   MagnifyingGlassIcon,
   PencilSquareIcon,
   PhotoIcon,
@@ -43,6 +45,14 @@ export function MusicalNoteIcon({ className }: IconProps) {
       aria-hidden="true"
     />
   );
+}
+
+export function LinkIcon({ className }: IconProps) {
+  return <AnimateLinkIcon className={className} size={24} animateOnHover />;
+}
+
+export function CompassIcon({ className }: IconProps) {
+  return <AnimateCompassIcon className={className} size={24} animateOnHover />;
 }
 
 export function SuccessCheckCircleIcon({ className }: IconProps) {
@@ -86,23 +96,7 @@ export function NotificationBellIcon({ className }: IconProps) {
 }
 
 export function AlarmClockIcon({ className }: IconProps) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      strokeWidth={1.5}
-      stroke="currentColor"
-      className={className}
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-      />
-    </svg>
-  );
+  return <AnimateTimerIcon className={className} size={24} animateOnHover />;
 }
 
 export function FileDropIcon({ className }: IconProps) {

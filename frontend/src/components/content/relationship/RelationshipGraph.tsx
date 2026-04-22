@@ -762,13 +762,13 @@ export function RelationshipGraph() {
             }
           }}
         >
-          <section className="w-full max-w-[560px] rounded-[28px] border border-white/85 bg-[linear-gradient(180deg,rgba(255,249,243,0.96)_0%,rgba(238,244,250,0.92)_100%)] p-5 shadow-[0_28px_64px_rgba(15,23,42,0.18)] backdrop-blur-xl">
-            <div className="flex items-start justify-between gap-3">
+          <div className="w-full max-w-[560px] overflow-hidden rounded-[24px] border border-slate-800/55 backdrop-blur-[2px] shadow-[0_22px_50px_rgba(15,23,42,0.32)]">
+            {false && <div className="hidden">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Detalle de nota</p>
-                <h3 className="mt-2 break-words text-xl font-extrabold text-slate-900">{selectedEntry.title}</h3>
+                <h3 className="mt-2 break-words text-xl font-extrabold text-slate-900">{selectedEntry?.title}</h3>
                 <p className="mt-2 text-sm font-medium text-slate-600">
-                  {selectedEntry.processingCategory || (selectedEntry.flag ? selectedEntry.flag.toLowerCase() : "nota")}
+                  {selectedEntry?.processingCategory || (selectedEntry?.flag ? selectedEntry?.flag?.toLowerCase() : "nota")}
                 </p>
               </div>
               <button
@@ -779,8 +779,8 @@ export function RelationshipGraph() {
               >
                 ×
               </button>
-            </div>
-            <div className="scrollbar-brand mt-5 max-h-[calc(100vh-11rem)] overflow-y-auto pr-1">
+            </div>}
+            <div className="scrollbar-brand max-h-[calc(100vh-11rem)] overflow-y-auto">
               <EntryDetailContent
                 ref={entryDetailContentRef}
                 entry={selectedEntry}
@@ -789,9 +789,19 @@ export function RelationshipGraph() {
                 onUnauthorized={() => {
                   window.location.reload();
                 }}
+                headerActions={
+                  <button
+                    type="button"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/80 bg-[linear-gradient(180deg,rgba(255,247,242,0.92)_0%,rgba(255,233,236,0.84)_100%)] text-rose-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-rose-300 hover:bg-rose-50"
+                    aria-label="Cerrar detalle"
+                    onClick={() => void closeSelectedEntry()}
+                  >
+                    ×
+                  </button>
+                }
               />
             </div>
-          </section>
+          </div>
         </div>
       ) : null}
     </div>

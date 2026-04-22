@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Panel } from "primereact/panel";
 import { isApiError } from "../../../api/client";
 import {
   createFolder,
@@ -1374,6 +1375,61 @@ export function StorageEntriesSection({
                   ? twitchVideo!.title
                   : entry.title;
 
+              if (!isYoutubeCard && !isTwitchCard) {
+                return (
+                  <article
+                    key={card.key}
+                    className="mb-3 inline-block w-full break-inside-avoid text-left"
+                    onClick={() => {
+                      setForcedLeftEntryId(null);
+                      setForcedRightEntryId(null);
+                      setSelectedEntryId(entry.id);
+                    }}
+                  >
+                    <Panel
+                      header={
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="break-words text-base font-extrabold leading-snug text-ink-900">
+                            {cardTitle}
+                          </span>
+                          <TextComponentIcon className="h-6 w-6 shrink-0 text-brand-600" />
+                        </div>
+                      }
+                      className={`library-entry-panel ${selected ? "library-entry-panel-selected" : ""}`}
+                    >
+                      <p className="break-words text-sm text-ink-700 overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+                        {buildEntryText(entry, t("entries.noContent"))}
+                      </p>
+                      {entry.tags && entry.tags.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {entry.tags.map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center rounded-full bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800"
+                            >
+                              #{tag.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          className="inline-flex h-9 items-center justify-center gap-2 rounded-control border border-rose-300 bg-white px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+                          aria-label={t("storage.deleteEntryAria")}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openDeleteEntryConfirmForEntry(entry.id);
+                          }}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </Panel>
+                  </article>
+                );
+              }
+
               return (
                 <article
                   key={card.key}
@@ -1409,10 +1465,8 @@ export function StorageEntriesSection({
                   )}
                   {isYoutubeCard ? (
                     <YoutubeIcon className="pointer-events-none absolute right-4 top-4 h-7 w-7 text-rose-600" />
-                  ) : isTwitchCard ? (
-                    <TwitchIcon className="pointer-events-none absolute right-4 top-4 h-7 w-7 text-violet-600" />
                   ) : (
-                    <TextComponentIcon className="pointer-events-none absolute right-4 top-4 h-7 w-7 text-brand-600" />
+                    <TwitchIcon className="pointer-events-none absolute right-4 top-4 h-7 w-7 text-violet-600" />
                   )}
                   <div className="mt-2 h-px w-full bg-brand-200" />
                   {isYoutubeCard ? (
@@ -1579,13 +1633,10 @@ export function StorageEntriesSection({
             >
             {renderRelatedStack(leftRelatedEntries, "left", leftCardScaleClass, t("storage.relatedLeft"))}
 
-            <section
-              className={`flex max-h-[calc(100vh-2rem)] w-full max-w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden rounded-[30px] border border-white/85 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.36),transparent_24%),radial-gradient(circle_at_top_right,rgba(219,234,254,0.24),transparent_34%),linear-gradient(180deg,rgba(255,249,243,0.94)_0%,rgba(238,244,250,0.88)_100%)] p-4 shadow-[0_28px_68px_rgba(15,23,42,0.14),inset_0_1px_0_rgba(255,255,255,0.84)] backdrop-blur-[20px] transform-gpu transition-all duration-300 ease-out md:max-w-[560px] md:p-5 ${centerCardScaleClass}`}
+            <div
+              className={`flex max-h-[calc(100vh-2rem)] w-full max-w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden transform-gpu transition-all duration-300 ease-out md:max-w-[560px] ${centerCardScaleClass}`}
             >
-              <div className="mb-4 flex shrink-0 items-center justify-between gap-2">
-              <h3 className="text-lg font-extrabold tracking-tight text-ink-900">
-                {t("storage.detailTitle")}
-              </h3>
+              {false && (
               <div className="relative flex items-center gap-2" ref={entryFoldersMenuRef}>
                 <button
                   type="button"
@@ -1650,7 +1701,7 @@ export function StorageEntriesSection({
                   </section>
                 )}
               </div>
-              </div>
+              )}
 
               <div className="scrollbar-brand min-h-0 overflow-y-auto pr-1">
                 <EntryDetailContent
@@ -1659,9 +1710,75 @@ export function StorageEntriesSection({
                   onEntriesUpdated={onEntriesUpdated}
                   onEntryUpdated={onEntryUpdated}
                   onUnauthorized={onUnauthorized}
+                  headerActions={
+                    <div className="relative flex items-center gap-2" ref={entryFoldersMenuRef}>
+                      <button
+                        type="button"
+                        className={iconToggleClass(entryFoldersOpen)}
+                        aria-label={t("storage.entryFoldersToggleAria")}
+                        aria-haspopup="menu"
+                        aria-expanded={entryFoldersOpen}
+                        onClick={openEntryFoldersMenu}
+                      >
+                        <StorageTabIcon className="h-6 w-6" />
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/80 bg-[linear-gradient(180deg,rgba(255,247,242,0.92)_0%,rgba(255,233,236,0.84)_100%)] text-rose-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-rose-300 hover:bg-rose-50"
+                        aria-label={t("storage.closeDetailAria")}
+                        onClick={() => void closeSelectedEntry()}
+                      >
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+
+                      {entryFoldersOpen && (
+                        <section
+                          className="absolute right-0 top-[calc(100%+10px)] z-40 w-[280px] max-w-[calc(100vw-3rem)] rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(250,252,255,0.96)_0%,rgba(239,244,249,0.92)_100%)] p-3 shadow-[0_18px_40px_rgba(15,23,42,0.10)] backdrop-blur-md"
+                          role="menu"
+                          aria-label={t("storage.entryFoldersMenuAria")}
+                        >
+                          {entryFoldersLoading ? (
+                            <p className="text-sm font-medium text-ink-600">{t("storage.entryFoldersLoading")}</p>
+                          ) : entryFoldersError ? (
+                            <p className="text-sm font-medium text-ink-600">{entryFoldersError}</p>
+                          ) : entryFolders.length === 0 ? (
+                            <p className="text-sm font-medium text-ink-600">{t("storage.entryFoldersEmpty")}</p>
+                          ) : (
+                            <ul className="scrollbar-brand max-h-56 space-y-1 overflow-y-auto pr-1">
+                              {entryFolders.map((folder) => (
+                                <li key={folder.id}>
+                                  <button
+                                    type="button"
+                                    className={`flex w-full items-center justify-between rounded-control border px-2.5 py-2 text-sm font-semibold transition ${
+                                      folder.selected
+                                        ? "border-brand-400 bg-brand-100 text-brand-800"
+                                        : "border-brand-200 bg-white/25 text-ink-800 hover:bg-brand-50"
+                                    }`}
+                                    disabled={updatingFolderId === folder.id}
+                                    onClick={() => void handleToggleEntryFolder(folder)}
+                                  >
+                                    <span className="truncate text-left">{folder.title}</span>
+                                    <span
+                                      className={`ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs ${
+                                        folder.selected
+                                          ? "border-brand-500 bg-brand-500 text-white"
+                                          : "border-brand-300 text-transparent"
+                                      }`}
+                                    >
+                                      âœ“
+                                    </span>
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </section>
+                      )}
+                    </div>
+                  }
                 />
               </div>
-            </section>
+            </div>
 
             {renderRelatedStack(rightRelatedEntries, "right", rightCardScaleClass, t("storage.relatedRight"))}
             </div>
