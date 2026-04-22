@@ -1,9 +1,9 @@
 import { useI18n } from "../../../i18n/I18nProvider";
 import {
   CompassIcon,
-  InboxArrowDownIcon,
-  RelationshipGraphIcon,
-  UserIcon
+  SendIcon,
+  UnplugIcon,
+  UserRoundIcon
 } from "../../ui/icons";
 import { StorageTabIcon } from "../../ui/StorageTabIcon";
 import { footerButtonClass, type InboxSection } from "./constants";
@@ -21,14 +21,14 @@ const mobileNavSections: Array<{
 }> = [
   { section: "explore", withRightBorder: true, icon: CompassIcon, labelKey: "footer.explore" },
   { section: "storage", withRightBorder: true, icon: StorageTabIcon, labelKey: "footer.storage" },
-  { section: "inbox", withRightBorder: true, icon: InboxArrowDownIcon, labelKey: "footer.inbox" },
+  { section: "inbox", withRightBorder: true, icon: SendIcon, labelKey: "footer.inbox" },
   {
     section: "relationshipGraph",
     withRightBorder: true,
-    icon: RelationshipGraphIcon,
+    icon: UnplugIcon,
     labelKey: "footer.relationshipGraph"
   },
-  { section: "profile", withRightBorder: false, icon: UserIcon, labelKey: "footer.profile" }
+  { section: "profile", withRightBorder: false, icon: UserRoundIcon, labelKey: "footer.profile" }
 ];
 
 export function ContentInboxMobileFooter({

@@ -1,8 +1,13 @@
 import frameImage from "../../assets/Frame.png";
 import spotifyImage from "../../assets/spotify.svg";
+import { BookCheck } from "lucide-react";
+import { motion } from "motion/react";
 import { CompassIcon as AnimateCompassIcon } from "../animate-ui/icons/compass";
 import { LinkIcon as AnimateLinkIcon } from "../animate-ui/icons/link";
+import { SendIcon as AnimateSendIcon } from "../animate-ui/icons/send";
 import { TimerIcon as AnimateTimerIcon } from "../animate-ui/icons/timer";
+import { UnplugIcon as AnimateUnplugIcon } from "../animate-ui/icons/unplug";
+import { UserRoundIcon as AnimateUserRoundIcon } from "../animate-ui/icons/user-round";
 
 export {
   ArrowDownTrayIcon,
@@ -23,6 +28,34 @@ export {
 type IconProps = {
   className: string;
 };
+
+type MotionIconProps = {
+  name: "BookCheck";
+  animation?: "bounce";
+  className?: string;
+};
+
+export function MotionIcon({ name, animation, className }: MotionIconProps) {
+  if (name !== "BookCheck") {
+    return null;
+  }
+
+  const icon = <BookCheck className={className} aria-hidden="true" />;
+
+  if (animation === "bounce") {
+    return (
+      <motion.span
+        className="inline-flex items-center justify-center"
+        animate={{ y: [0, -2, 0] }}
+        transition={{ duration: 0.95, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+      >
+        {icon}
+      </motion.span>
+    );
+  }
+
+  return icon;
+}
 
 export function FrameIcon({ className }: IconProps) {
   return <img src={frameImage} alt="" className={className} aria-hidden="true" />;
@@ -53,6 +86,18 @@ export function LinkIcon({ className }: IconProps) {
 
 export function CompassIcon({ className }: IconProps) {
   return <AnimateCompassIcon className={className} size={24} animateOnHover />;
+}
+
+export function SendIcon({ className }: IconProps) {
+  return <AnimateSendIcon className={className} size={24} animateOnHover />;
+}
+
+export function UnplugIcon({ className }: IconProps) {
+  return <AnimateUnplugIcon className={className} size={24} animateOnHover />;
+}
+
+export function UserRoundIcon({ className }: IconProps) {
+  return <AnimateUserRoundIcon className={className} size={24} animateOnHover />;
 }
 
 export function SuccessCheckCircleIcon({ className }: IconProps) {

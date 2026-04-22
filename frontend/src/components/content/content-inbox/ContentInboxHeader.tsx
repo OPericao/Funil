@@ -6,10 +6,10 @@ import type { EntryItem } from "../../../types/resource";
 import {
   CompassIcon,
   Cog6ToothIcon,
-  InboxArrowDownIcon,
   NotificationBellIcon,
-  RelationshipGraphIcon,
-  UserIcon
+  SendIcon,
+  UnplugIcon,
+  UserRoundIcon
 } from "../../ui/icons";
 import { StorageTabIcon } from "../../ui/StorageTabIcon";
 import { LANGUAGE_OPTIONS, type InboxSection } from "./constants";
@@ -36,9 +36,9 @@ const desktopNavSections: Array<{
 }> = [
   { section: "explore", icon: CompassIcon, ariaKey: "footer.explore" },
   { section: "storage", icon: StorageTabIcon, ariaKey: "footer.storage" },
-  { section: "inbox", icon: InboxArrowDownIcon, ariaKey: "footer.inbox" },
-  { section: "relationshipGraph", icon: RelationshipGraphIcon, ariaKey: "footer.relationshipGraph" },
-  { section: "profile", icon: UserIcon, ariaKey: "footer.profile" }
+  { section: "inbox", icon: SendIcon, ariaKey: "footer.inbox" },
+  { section: "relationshipGraph", icon: UnplugIcon, ariaKey: "footer.relationshipGraph" },
+  { section: "profile", icon: UserRoundIcon, ariaKey: "footer.profile" }
 ];
 
 function desktopSectionButtonClass(active: boolean) {

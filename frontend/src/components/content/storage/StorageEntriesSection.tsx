@@ -18,6 +18,7 @@ import { StorageTabIcon } from "../../ui/StorageTabIcon";
 import {
   ArrowLongLeftIcon,
   LinkIcon,
+  MotionIcon,
   MusicalNoteIcon,
   TableIcon,
   TextComponentIcon,
@@ -1724,11 +1725,11 @@ export function StorageEntriesSection({
                       </button>
                       <button
                         type="button"
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/80 bg-[linear-gradient(180deg,rgba(255,247,242,0.92)_0%,rgba(255,233,236,0.84)_100%)] text-rose-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-rose-300 hover:bg-rose-50"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-emerald-200/85 bg-[linear-gradient(180deg,rgba(240,253,244,0.94)_0%,rgba(209,250,229,0.86)_100%)] text-emerald-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-emerald-300 hover:bg-emerald-50"
                         aria-label={t("storage.closeDetailAria")}
                         onClick={() => void closeSelectedEntry()}
                       >
-                        <XMarkIcon className="h-5 w-5" />
+                        <MotionIcon name="BookCheck" animation="bounce" className="h-5 w-5 text-emerald-700" />
                       </button>
 
                       {entryFoldersOpen && (

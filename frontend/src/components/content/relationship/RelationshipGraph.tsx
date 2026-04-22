@@ -32,6 +32,7 @@ import {
 } from "../../../api/resources";
 import type { EntryItem, EntryRelationshipItem, ResourceItem } from "../../../types/resource";
 import { extractPlainTextFromStoredText } from "../../../utils/richText";
+import { MotionIcon } from "../../ui/icons";
 import { EntryDetailContent, type EntryDetailContentHandle } from "../storage/EntryDetailContent";
 
 type GraphNodeData = {
@@ -792,11 +793,14 @@ export function RelationshipGraph() {
                 headerActions={
                   <button
                     type="button"
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/80 bg-[linear-gradient(180deg,rgba(255,247,242,0.92)_0%,rgba(255,233,236,0.84)_100%)] text-rose-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-rose-300 hover:bg-rose-50"
+                    className="relative inline-flex h-10 w-10 items-center justify-center rounded-control border border-emerald-200/85 bg-[linear-gradient(180deg,rgba(240,253,244,0.94)_0%,rgba(209,250,229,0.86)_100%)] text-transparent shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-emerald-300 hover:bg-emerald-50"
                     aria-label="Cerrar detalle"
                     onClick={() => void closeSelectedEntry()}
                   >
                     ×
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <MotionIcon name="BookCheck" animation="bounce" className="h-5 w-5 text-emerald-700" />
+                    </span>
                   </button>
                 }
               />
