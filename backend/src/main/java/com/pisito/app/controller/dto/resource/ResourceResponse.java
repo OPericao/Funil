@@ -13,6 +13,7 @@ public record ResourceResponse(
     String siteName,
     String description,
     String contentPreview,
+    String previewImageUrl,
     String storageKey,
     String fileName,
     String mimeType,

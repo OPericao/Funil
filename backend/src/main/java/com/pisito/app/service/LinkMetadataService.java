@@ -77,13 +77,19 @@ public class LinkMetadataService {
                 metaContent(html, "application-name"),
                 humanizeHost(uri.getHost())
             );
+            String previewImageUrl = firstNonBlank(
+                resolvePreviewUrl(uri, metaContent(html, "og:image")),
+                resolvePreviewUrl(uri, metaContent(html, "twitter:image")),
+                resolvePreviewUrl(uri, metaContent(html, "twitter:image:src"))
+            );
             String contentPreview = extractVisibleText(html);
 
             return Optional.of(new LinkMetadata(
                 truncate(title, 120),
                 truncate(description, DESCRIPTION_LIMIT),
                 truncate(siteName, 255),
-                truncate(contentPreview, CONTENT_PREVIEW_LIMIT)
+                truncate(contentPreview, CONTENT_PREVIEW_LIMIT),
+                truncate(previewImageUrl, 2000)
             ));
         } catch (RestClientException ex) {
             log.debug("link metadata fetch failed for url={}", uri, ex);
@@ -118,7 +124,18 @@ public class LinkMetadataService {
 
     private LinkMetadata fallbackMetadata(URI uri) {
         String siteName = humanizeHost(uri.getHost());
-        return new LinkMetadata(null, null, truncate(siteName, 255), null);
+        return new LinkMetadata(null, null, truncate(siteName, 255), null, null);
+    }
+
+    private String resolvePreviewUrl(URI pageUri, String rawValue) {
+        if (!StringUtils.hasText(rawValue)) {
+            return null;
+        }
+        try {
+            return pageUri.resolve(rawValue.trim()).toString();
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private String extractTitle(String html) {
@@ -199,7 +216,8 @@ public class LinkMetadataService {
         String title,
         String description,
         String siteName,
-        String contentPreview
+        String contentPreview,
+        String previewImageUrl
     ) {
     }
 }

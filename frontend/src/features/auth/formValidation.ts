@@ -20,3 +20,17 @@ export function validatePassword(password: string): I18nKey | null {
   }
   return null;
 }
+
+export function validateEmail(email: string): I18nKey | null {
+  const normalized = email.trim();
+  if (!normalized) {
+    return "validation.email.required";
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(normalized)) {
+    return "validation.email.invalid";
+  }
+
+  return null;
+}

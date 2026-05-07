@@ -13,6 +13,56 @@ type RichTextPayload = {
 const URL_TEXT_PATTERN = /(?:https?:\/\/)?(?:www\.|m\.)?[^\s<>"')]+\.[^\s<>"')]+/gi;
 const LINK_HREF_PATTERN = /<a\b[^>]*\bhref=(["'])(.*?)\1/gi;
 
+function isLikelyAbsoluteUrl(value: string) {
+  return /^[a-z][a-z\d+.-]*:/i.test(value);
+}
+
+function isLikelyDomainLike(value: string) {
+  return /^(?:www\.|m\.)?[^\s/]+\.[^\s]+$/i.test(value);
+}
+
+function normalizeLinkCandidate(value: string | null | undefined) {
+  const candidate = value?.trim();
+  if (!candidate) {
+    return null;
+  }
+
+  if (isLikelyAbsoluteUrl(candidate)) {
+    return candidate;
+  }
+
+  if (candidate.startsWith("/") || candidate.startsWith("#") || candidate.startsWith("?")) {
+    return null;
+  }
+
+  if (isLikelyDomainLike(candidate)) {
+    return `https://${candidate}`;
+  }
+
+  return null;
+}
+
+function getCandidateHostname(value: string) {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isLocalHostname(hostname: string | null) {
+  if (!hostname) {
+    return false;
+  }
+
+  const currentHostname =
+    typeof window !== "undefined" && window.location.hostname
+      ? window.location.hostname.toLowerCase()
+      : null;
+
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === currentHostname;
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -177,6 +227,37 @@ export function extractUrlsFromStoredText(value: string | null | undefined) {
   }
 
   return Array.from(urls);
+}
+
+export function extractPrimaryLinkUrl(htmlValue: string | null | undefined, textValue: string | null | undefined) {
+  const candidates: string[] = [];
+
+  if (htmlValue) {
+    for (const match of htmlValue.matchAll(LINK_HREF_PATTERN)) {
+      const href = match[2]?.trim();
+      const normalized = normalizeLinkCandidate(href);
+      if (normalized) {
+        candidates.push(normalized);
+      }
+    }
+  }
+
+  if (textValue) {
+    for (const match of textValue.matchAll(URL_TEXT_PATTERN)) {
+      const normalized = normalizeLinkCandidate(match[0]);
+      if (normalized) {
+        candidates.push(normalized);
+      }
+    }
+  }
+
+  const uniqueCandidates = Array.from(new Set(candidates));
+  const externalCandidate = uniqueCandidates.find((candidate) => !isLocalHostname(getCandidateHostname(candidate)));
+  if (externalCandidate) {
+    return externalCandidate;
+  }
+
+  return uniqueCandidates[0] ?? null;
 }
 
 export function extractEditorHtmlFromStoredText(value: string | null | undefined) {

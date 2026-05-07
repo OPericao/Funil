@@ -4,7 +4,11 @@ import { createEntry, uploadFile } from "../../api/resources";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { CreateEntryResourceInput } from "../../types/resource";
 import { readErrorMessage } from "../../utils/error";
-import { serializeRichTextPayload, supportsRichTextEntryFlag } from "../../utils/richText";
+import {
+  extractPrimaryLinkUrl,
+  serializeRichTextPayload,
+  supportsRichTextEntryFlag
+} from "../../utils/richText";
 import { SuccessToast } from "../ui/SuccessToast";
 import {
   InboxEntryCreateForm,
@@ -72,6 +76,7 @@ export function ContentExtensionWidget({ onLogout }: ContentExtensionWidgetProps
   async function handleCreateInboxEntry() {
     const title = inboxEntryForm.title.trim();
     const textContent = inboxEntryForm.textContent.trim();
+    const linkUrl = extractPrimaryLinkUrl(inboxEntryForm.textContentHtml, textContent);
     const activeFlag = resolveEntryFlag(inboxEntryForm);
 
     if (activeFlag === "YOUTUBE" && !textContent) {
@@ -82,7 +87,7 @@ export function ContentExtensionWidget({ onLogout }: ContentExtensionWidgetProps
       setInboxError(t("entries.twitchRequired"));
       return;
     }
-    if (activeFlag === "LINK" && !textContent) {
+    if (activeFlag === "LINK" && !linkUrl) {
       setInboxError(t("entries.linkRequired"));
       return;
     }
@@ -93,7 +98,7 @@ export function ContentExtensionWidget({ onLogout }: ContentExtensionWidgetProps
         activeFlag === "LINK"
           ? {
               type: "LINK",
-              url: textContent
+              url: linkUrl!
             }
           : {
               type: "RAW",

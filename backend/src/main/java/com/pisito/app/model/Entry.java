@@ -46,6 +46,9 @@ public class Entry {
     @Column(name = "notification_date")
     private Instant notificationDate;
 
+    @Column(name = "notification_reminder_sent_at")
+    private Instant notificationReminderSentAt;
+
     @Transient
     private String processingCategory;
 
@@ -202,6 +205,14 @@ public class Entry {
 
     public void setNotificationDate(Instant notificationDate) {
         this.notificationDate = notificationDate;
+    }
+
+    public Instant getNotificationReminderSentAt() {
+        return notificationReminderSentAt;
+    }
+
+    public void setNotificationReminderSentAt(Instant notificationReminderSentAt) {
+        this.notificationReminderSentAt = notificationReminderSentAt;
     }
 
     public String getProcessingCategory() {

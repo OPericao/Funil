@@ -44,6 +44,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -431,7 +432,10 @@ public class EntryService {
 
         if (request.getNotification()) {
             String notificationContext = allTextContent.isEmpty() ? title : allTextContent.toString();
-            entry.setNotificationDate(ollamaTitleService.extractNotificationDate(notificationContext).orElse(null));
+            entry.setNotificationDate(
+                ollamaTitleService.extractNotificationDate(notificationContext)
+                    .orElse(java.time.Instant.now().plus(java.time.Duration.ofDays(1)))
+            );
             log.info("createEntry extracted notificationDate={}", entry.getNotificationDate());
         } else {
             log.info("createEntry notification=false userId={} flag={}", userId, entry.getFlag());
@@ -677,6 +681,7 @@ public class EntryService {
         String siteName = null;
         String description = null;
         String contentPreview = null;
+        String previewImageUrl = null;
         String storageKey = null;
         String fileName = null;
         String mimeType = null;
@@ -688,6 +693,7 @@ public class EntryService {
             siteName = linkResource.getSiteName();
             description = linkResource.getDescription();
             contentPreview = linkResource.getContentPreview();
+            previewImageUrl = linkResource.getPreviewImageUrl();
         } else if (resource instanceof MediaResource mediaResource) {
             storageKey = mediaResource.getStorageKey();
             fileName = mediaResource.getFileName();
@@ -703,6 +709,7 @@ public class EntryService {
             siteName,
             description,
             contentPreview,
+            previewImageUrl,
             storageKey,
             fileName,
             mimeType,
@@ -738,17 +745,18 @@ public class EntryService {
         resource.setSiteName(metadata == null ? null : metadata.siteName());
         resource.setDescription(metadata == null ? null : metadata.description());
         resource.setContentPreview(metadata == null ? null : metadata.contentPreview());
+        resource.setPreviewImageUrl(metadata == null ? null : metadata.previewImageUrl());
         return resource;
     }
 
     private String buildLinkContext(LinkResource resource) {
-        return List.of(
+        return Stream.of(
                 trimOrNull(resource.getTitle()),
                 trimOrNull(resource.getDescription()),
                 trimOrNull(resource.getContentPreview()),
                 trimOrNull(resource.getSiteName()),
                 trimOrNull(resource.getUrl())
-            ).stream()
+            )
             .filter(StringUtils::hasText)
             .collect(Collectors.joining("\n"));
     }

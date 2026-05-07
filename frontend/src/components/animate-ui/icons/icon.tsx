@@ -141,7 +141,6 @@ function AnimateIcon({
   children,
   ...props
 }: AnimateIconProps) {
-  const { ref: _ignoredRef, ...domProps } = props;
   const controls = useAnimation();
 
   const [localAnimate, setLocalAnimate] = React.useState<boolean>(() => {
@@ -405,23 +404,23 @@ function AnimateIcon({
 
   const content = asChild ? (
     <Slot
-      ref={inViewRef}
+      ref={inViewRef as React.Ref<HTMLElement>}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-      {...domProps}
+      {...props}
     >
       {children}
     </Slot>
   ) : (
     <motion.span
-      ref={inViewRef}
+      ref={inViewRef as React.Ref<HTMLSpanElement>}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
-      {...domProps}
+      {...props}
     >
       {children}
     </motion.span>

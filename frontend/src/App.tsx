@@ -103,10 +103,12 @@ function App() {
               auth.authUser ? (
                 <ContentInbox
                   username={auth.authUser.username}
+                  email={auth.authUser.email}
                   submitting={auth.authSubmitting}
                   error={auth.authError}
                   onUpdateUsername={auth.updateUsernameUser}
                   onUpdatePassword={auth.updatePasswordUser}
+                  onUpdateEmail={auth.updateEmailUser}
                   onClearError={auth.clearAuthError}
                   onLogout={auth.logout}
                 />

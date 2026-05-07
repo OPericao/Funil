@@ -26,6 +26,17 @@ spring:
   sql:
     init:
       mode: ${SQL_INIT_MODE:never}
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS_ENABLE:true}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -63,3 +74,8 @@ app:
   jwt:
     secret: ${JWT_SECRET:bXktZGV2LXN1cGVyLXNlY3JldC1rZXktZm9yLWp3dC0zMi1ieXRlcy1taW4=}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  reminders:
+    cron: ${REMINDERS_CRON:0 0 * * * *}
+  mail:
+    from-email: ${MAIL_FROM_EMAIL:}
+    from-name: ${MAIL_FROM_NAME:Funil}

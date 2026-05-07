@@ -1,0 +1,129 @@
+2026-05-03 19:07:48.910119+02:00 jdbc[4]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:07:49.037623+02:00 jdbc[4]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: El objeto ya está cerrado
+The object is already closed [90007-224]
+2026-05-03 19:14:19.378975+02:00 jdbc[8]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:14:19.703690+02:00 jdbc[9]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:14:20.648651+02:00 jdbc[10]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:14:21.354973+02:00 jdbc[11]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:14:21.987129+02:00 jdbc[11]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: El objeto ya está cerrado
+The object is already closed [90007-224]
+2026-05-03 19:23:04.325775+02:00 jdbc[16]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:23:05.520859+02:00 jdbc[17]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:23:05.541467+02:00 jdbc[17]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: El objeto ya está cerrado
+The object is already closed [90007-224]
+2026-05-03 19:23:05.662065+02:00 jdbc[20]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:23:05.915264+02:00 jdbc[20]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: El objeto ya está cerrado
+The object is already closed [90007-224]
+2026-05-03 19:23:06.336732+02:00 jdbc[19]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla {0}
+Timeout trying to lock table {0}; SQL statement:
+insert into entry_embeddings (content_hash,embedding_json,embedding_model,entry_id,focus_embedding_json,updated_at,id) values (?,?,?,?,?,?,default) [50200-224]
+2026-05-03 19:23:06.836973+02:00 jdbc[19]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: El objeto ya está cerrado
+The object is already closed [90007-224]
+2026-05-03 19:33:33.968000+02:00 database: flush
+org.h2.message.DbException: Error General : "org.h2.mvstore.MVStoreException: The file is locked: C:/Users/lucas.pineiro/Desktop/PLACSP_HPPO/PROYECTO/Funil/backend/data/funil.mv.db [2.2.224/7]"
+General error: "org.h2.mvstore.MVStoreException: The file is locked: C:/Users/lucas.pineiro/Desktop/PLACSP_HPPO/PROYECTO/Funil/backend/data/funil.mv.db [2.2.224/7]" [50000-224]
+	at org.h2.message.DbException.get(DbException.java:212)
+	at org.h2.message.DbException.convert(DbException.java:407)
+	at org.h2.mvstore.db.Store.lambda$new$0(Store.java:122)
+	at org.h2.mvstore.MVStore.handleException(MVStore.java:1546)
+	at org.h2.mvstore.MVStore.panic(MVStore.java:371)
+	at org.h2.mvstore.MVStore.<init>(MVStore.java:291)
+	at org.h2.mvstore.MVStore$Builder.open(MVStore.java:2035)
+	at org.h2.mvstore.db.Store.<init>(Store.java:133)
+	at org.h2.engine.Database.<init>(Database.java:326)
+	at org.h2.engine.Engine.openSession(Engine.java:92)
+	at org.h2.engine.Engine.openSession(Engine.java:222)
+	at org.h2.engine.Engine.createSession(Engine.java:201)
+	at org.h2.engine.SessionRemote.connectEmbeddedOrServer(SessionRemote.java:343)
+	at org.h2.jdbc.JdbcConnection.<init>(JdbcConnection.java:125)
+	at org.h2.util.JdbcUtils.getConnection(JdbcUtils.java:288)
+	at org.h2.util.JdbcUtils.getConnection(JdbcUtils.java:270)
+	at org.h2.tools.RunScript.process(RunScript.java:312)
+	at org.h2.tools.RunScript.runTool(RunScript.java:139)
+	at org.h2.tools.RunScript.main(RunScript.java:66)
+Caused by: org.h2.jdbc.JdbcSQLNonTransientException: Error General : "org.h2.mvstore.MVStoreException: The file is locked: C:/Users/lucas.pineiro/Desktop/PLACSP_HPPO/PROYECTO/Funil/backend/data/funil.mv.db [2.2.224/7]"
+General error: "org.h2.mvstore.MVStoreException: The file is locked: C:/Users/lucas.pineiro/Desktop/PLACSP_HPPO/PROYECTO/Funil/backend/data/funil.mv.db [2.2.224/7]" [50000-224]
+	at org.h2.message.DbException.getJdbcSQLException(DbException.java:566)
+	at org.h2.message.DbException.getJdbcSQLException(DbException.java:489)
+	... 19 more
+Caused by: org.h2.mvstore.MVStoreException: The file is locked: C:/Users/lucas.pineiro/Desktop/PLACSP_HPPO/PROYECTO/Funil/backend/data/funil.mv.db [2.2.224/7]
+	at org.h2.mvstore.DataUtils.newMVStoreException(DataUtils.java:996)
+	at org.h2.mvstore.SingleFileStore.lockFileChannel(SingleFileStore.java:143)
+	at org.h2.mvstore.SingleFileStore.open(SingleFileStore.java:117)
+	at org.h2.mvstore.SingleFileStore.open(SingleFileStore.java:81)
+	at org.h2.mvstore.MVStore.<init>(MVStore.java:286)
+	... 13 more
+2026-05-03 19:34:37.490000+02:00 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLDataException: Valor no permitido para la columna "('CHECKLIST', 'ENUMERATION', 'LINK', 'RAW', 'SPOTIFY', 'TABLE', 'TWITCH', 'YOUTUBE')": "4"
+Value not permitted for column "('CHECKLIST', 'ENUMERATION', 'LINK', 'RAW', 'SPOTIFY', 'TABLE', 'TWITCH', 'YOUTUBE')": "4"; SQL statement:
+UPDATE entries SET flag='LINK' WHERE flag='4' [22030-224]
+	at org.h2.message.DbException.getJdbcSQLException(DbException.java:518)
+	at org.h2.message.DbException.getJdbcSQLException(DbException.java:489)
+	at org.h2.message.DbException.get(DbException.java:223)
+	at org.h2.value.ExtTypeInfoEnum.getValue(ExtTypeInfoEnum.java:175)
+	at org.h2.value.Value.convertToEnum(Value.java:2315)
+	at org.h2.value.Value.convertTo(Value.java:1195)
+	at org.h2.value.Value.convertTo(Value.java:1047)
+	at org.h2.expression.condition.Comparison.optimize(Comparison.java:197)
+	at org.h2.expression.Expression.optimizeCondition(Expression.java:148)
+	at org.h2.command.dml.Update.doPrepare(Update.java:127)
+	at org.h2.command.dml.DataChangeStatement.prepare(DataChangeStatement.java:37)
+	at org.h2.command.Parser.prepareCommand(Parser.java:489)
+	at org.h2.engine.SessionLocal.prepareLocal(SessionLocal.java:639)
+	at org.h2.engine.SessionLocal.prepareCommand(SessionLocal.java:559)
+	at org.h2.jdbc.JdbcConnection.prepareCommand(JdbcConnection.java:1166)
+	at org.h2.jdbc.JdbcStatement.executeInternal(JdbcStatement.java:245)
+	at org.h2.jdbc.JdbcStatement.execute(JdbcStatement.java:231)
+	at org.h2.tools.RunScript.process(RunScript.java:218)
+	at org.h2.tools.RunScript.process(RunScript.java:186)
+	at org.h2.tools.RunScript.process(RunScript.java:313)
+	at org.h2.tools.RunScript.runTool(RunScript.java:139)
+	at org.h2.tools.RunScript.main(RunScript.java:66)
+2026-05-03 19:42:52.962266+02:00 jdbc[10]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla "ENTRY_EMBEDDINGS"
+Timeout trying to lock table "ENTRY_EMBEDDINGS"; SQL statement:
+update entry_embeddings set content_hash=?,embedding_json=?,embedding_model=?,entry_id=?,focus_embedding_json=?,updated_at=? where id=? [50200-224]
+2026-05-03 19:42:53.089631+02:00 jdbc[10]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: El objeto ya está cerrado
+The object is already closed [90007-224]
+2026-05-03 19:42:54.271135+02:00 jdbc[11]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla "ENTRY_EMBEDDINGS"
+Timeout trying to lock table "ENTRY_EMBEDDINGS"; SQL statement:
+update entry_embeddings set content_hash=?,embedding_json=?,embedding_model=?,entry_id=?,focus_embedding_json=?,updated_at=? where id=? [50200-224]
+2026-05-03 19:42:56.369429+02:00 jdbc[12]: exception
+org.h2.jdbc.JdbcSQLTimeoutException: Tiempo vencido intentando trabar (lock) la tabla "ENTRY_EMBEDDINGS"
+Timeout trying to lock table "ENTRY_EMBEDDINGS"; SQL statement:
+update entry_embeddings set content_hash=?,embedding_json=?,embedding_model=?,entry_id=?,focus_embedding_json=?,updated_at=? where id=? [50200-224]
+2026-05-03 19:42:56.469105+02:00 jdbc[12]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: El objeto ya está cerrado
+The object is already closed [90007-224]

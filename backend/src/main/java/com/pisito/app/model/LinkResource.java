@@ -20,6 +20,9 @@ public class LinkResource extends Resource {
     @Column(name = "content_preview", length = 4000)
     private String contentPreview;
 
+    @Column(name = "preview_image_url", length = 2000)
+    private String previewImageUrl;
+
     public LinkResource() {
         setType(ResourceType.LINK);
     }
@@ -54,6 +57,14 @@ public class LinkResource extends Resource {
 
     public void setContentPreview(String contentPreview) {
         this.contentPreview = contentPreview;
+    }
+
+    public String getPreviewImageUrl() {
+        return previewImageUrl;
+    }
+
+    public void setPreviewImageUrl(String previewImageUrl) {
+        this.previewImageUrl = previewImageUrl;
     }
 }
 

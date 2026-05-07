@@ -16,22 +16,24 @@ import GlassIcons from "../../ui/GlassIcons";
 import { errorTextClass, fieldLabelClass, inputClass } from "../../ui/styles";
 import { StorageTabIcon } from "../../ui/StorageTabIcon";
 import {
+  AlarmClockIcon,
   ArrowLongLeftIcon,
+  BookIcon,
   LinkIcon,
   MotionIcon,
   MusicalNoteIcon,
+  SquareXIcon,
   TableIcon,
-  TextComponentIcon,
-  TrashIcon,
   TwitchIcon,
-  YoutubeIcon,
-  XMarkIcon
+  YoutubeIcon
 } from "../../ui/icons";
+import { AnimateIcon } from "../../animate-ui/icons/icon";
 import { CreateFolderModal } from "./CreateFolderModal";
 import { Portal } from "../../ui/Portal";
 import { HeroVideoDialog } from "../../ui/HeroVideoDialog";
 import { getRelatedEntryIds } from "../../../utils/relationshipGraph";
 import { EntryDetailContent, type EntryDetailContentHandle } from "./EntryDetailContent";
+import { DeleteEntryConfirmModal, EntryFoldersMenu } from "./StorageEntriesSectionParts";
 
 type StorageEntriesSectionProps = {
   entries: EntryItem[];
@@ -56,48 +58,21 @@ function TodoFilterStorageIcon({ className }: { className?: string }) {
   return <StorageTabIcon className={className} scale={0.18} />;
 }
 
-function buildEntrySearchableText(entry: EntryItem) {
-  const resourcesText = entry.resources
-    .map((resource) =>
-      [
-        resource.title,
-        extractPlainTextFromStoredText(resource.textContent),
-        resource.url,
-        resource.siteName,
-        resource.description,
-        resource.contentPreview,
-        resource.fileName,
-        resource.mimeType
-      ]
-        .filter(Boolean)
-        .join(" ")
-    )
-    .join(" ");
-
-  const tagsText = entry.tags?.map(tag => tag.name).join(" ") || "";
-  const processedText = [
-    entry.processingCategory,
-    ...(entry.keyIdeas ?? []),
-    ...(entry.actions ?? [])
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return `${entry.title} ${resourcesText} ${tagsText} ${processedText}`.toLowerCase();
-}
-
-function normalizeForSearch(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+function firstNonEmptyText(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return null;
 }
 
 function buildEntryText(entry: EntryItem, emptyText: string) {
   if (entry.flag === "TABLE") {
     const tableResource = entry.resources.find((resource) => resource.type === "RAW");
     const table = parseCsvTable(extractPlainTextFromStoredText(tableResource?.textContent).trim());
-    return table ? `${table.rows.length} filas · ${table.headers.length} columnas` : "Tabla";
+    return table ? `${table.rows.length} filas, ${table.headers.length} columnas` : "Tabla";
   }
 
   const textResources = entry.resources
@@ -110,14 +85,15 @@ function buildEntryText(entry: EntryItem, emptyText: string) {
   }
 
   for (const resource of entry.resources) {
-    const preview =
-      extractPlainTextFromStoredText(resource.textContent)
-      ?? resource.description
-      ?? resource.contentPreview
-      ?? resource.url
-      ?? resource.fileName
-      ?? resource.title
-      ?? resource.siteName;
+    const preview = firstNonEmptyText(
+      extractPlainTextFromStoredText(resource.textContent),
+      resource.description,
+      resource.contentPreview,
+      resource.title,
+      resource.siteName,
+      resource.url,
+      resource.fileName
+    );
     if (preview) {
       return preview;
     }
@@ -225,6 +201,93 @@ type EntryDisplayCard = {
   youtubeVideo: YouTubeVideoPreview | null;
   twitchVideo: TwitchVideoPreview | null;
 };
+
+type EntryTypeIconConfig = {
+  icon: ({ className }: { className: string }) => JSX.Element;
+  className: string;
+};
+
+function buildDisplayCards(entries: EntryItem[]): EntryDisplayCard[] {
+  const cards: EntryDisplayCard[] = [];
+
+  for (const entry of entries) {
+    const youtubeVideos = getEntryYoutubeVideos(entry);
+    const twitchVideos = getEntryTwitchVideos(entry);
+    const hasYoutubeVideos = youtubeVideos.length > 0;
+    const hasTwitchVideos = twitchVideos.length > 0;
+
+    if (entry.flag === "YOUTUBE" && hasYoutubeVideos) {
+      youtubeVideos.forEach((video, index) => {
+        cards.push({
+          key: `${entry.id}-youtube-${video.videoId}-${index}`,
+          entry,
+          youtubeVideo: video,
+          twitchVideo: null
+        });
+      });
+      continue;
+    }
+
+    if (entry.flag === "TWITCH" && hasTwitchVideos) {
+      twitchVideos.forEach((video, index) => {
+        cards.push({
+          key: `${entry.id}-twitch-${video.variant}-${index}`,
+          entry,
+          youtubeVideo: null,
+          twitchVideo: video
+        });
+      });
+      continue;
+    }
+
+    youtubeVideos.forEach((video, index) => {
+      cards.push({
+        key: `${entry.id}-youtube-${video.videoId}-${index}`,
+        entry,
+        youtubeVideo: video,
+        twitchVideo: null
+      });
+    });
+
+    twitchVideos.forEach((video, index) => {
+      cards.push({
+        key: `${entry.id}-twitch-${video.variant}-${index}`,
+        entry,
+        youtubeVideo: null,
+        twitchVideo: video
+      });
+    });
+
+    if (!hasYoutubeVideos && !hasTwitchVideos) {
+      cards.push({
+        key: String(entry.id),
+        entry,
+        youtubeVideo: null,
+        twitchVideo: null
+      });
+    }
+  }
+
+  return cards;
+}
+
+function getEntryTypeIconConfig(entry: EntryItem): EntryTypeIconConfig {
+  switch (entry.flag) {
+    case "YOUTUBE":
+      return { icon: YoutubeIcon, className: "text-rose-600" };
+    case "TWITCH":
+      return { icon: TwitchIcon, className: "text-violet-600" };
+    case "SPOTIFY":
+      return { icon: MusicalNoteIcon, className: "text-emerald-600" };
+    case "TABLE":
+      return { icon: TableIcon, className: "text-sky-600" };
+    case "LINK":
+      return { icon: LinkIcon, className: "text-indigo-600" };
+    case "RAW":
+    default:
+      return { icon: BookIcon, className: "text-brand-600" };
+  }
+}
 
 function extractYoutubeVideoId(rawUrl: string): string | null {
   try {
@@ -466,32 +529,6 @@ function getEntryTwitchVideos(entry: EntryItem): TwitchVideoPreview[] {
   return Array.from(videosByEmbed.values());
 }
 
-function resolveMediaUrl(path: string | null): string | null {
-  if (!path) {
-    return null;
-  }
-  const trimmed = path.trim();
-  if (!trimmed) {
-    return null;
-  }
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("/api/uploads/")) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("/uploads/")) {
-    return `/api${trimmed}`;
-  }
-  if (trimmed.startsWith("/")) {
-    return trimmed;
-  }
-  if (trimmed.startsWith("uploads/")) {
-    return `/api/${trimmed}`;
-  }
-  return `/${trimmed}`;
-}
-
 export function StorageEntriesSection({
   entries,
   manualRelationships = [],
@@ -536,10 +573,44 @@ export function StorageEntriesSection({
   const [forcedLeftEntryId, setForcedLeftEntryId] = useState<number | null>(null);
   const [forcedRightEntryId, setForcedRightEntryId] = useState<number | null>(null);
   const [activeFlagFilter, setActiveFlagFilter] = useState<EntryFlagFilter>("ALL");
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const entryFoldersMenuRef = useRef<HTMLDivElement | null>(null);
   const carouselTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryDetailContentRef = useRef<EntryDetailContentHandle | null>(null);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  function buildAlarmCountdownText(notificationDate: string | null) {
+    if (!notificationDate) {
+      return null;
+    }
+    const deadlineMs = Date.parse(notificationDate);
+    if (Number.isNaN(deadlineMs)) {
+      return null;
+    }
+    const diffMs = deadlineMs - nowMs;
+    if (diffMs <= 0) {
+      return "Vencida";
+    }
+
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const minutes = totalMinutes % 60;
+    if (days > 0) {
+      return `Queda ${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+      return `Queda ${hours}h ${minutes}m`;
+    }
+    return `Queda ${minutes}m`;
+  }
 
   const filteredEntries = useMemo(() => {
     const query = searchValue.trim();
@@ -1174,75 +1245,7 @@ export function StorageEntriesSection({
   }
 
   const showingEntries = foldersViewActive && selectedFolder ? selectedFolderEntries : filteredEntries;
-  const displayCards = useMemo<EntryDisplayCard[]>(() => {
-    const cards: EntryDisplayCard[] = [];
-
-    for (const entry of showingEntries) {
-      const youtubeVideos = getEntryYoutubeVideos(entry);
-      const twitchVideos = getEntryTwitchVideos(entry);
-      const hasYoutubeVideos = youtubeVideos.length > 0;
-      const hasTwitchVideos = twitchVideos.length > 0;
-
-      if (entry.flag === "YOUTUBE" && hasYoutubeVideos) {
-        youtubeVideos.forEach((video, index) => {
-          cards.push({
-            key: `${entry.id}-youtube-${video.videoId}-${index}`,
-            entry,
-            youtubeVideo: video,
-            twitchVideo: null
-          });
-        });
-        continue;
-      }
-
-      if (entry.flag === "TWITCH" && hasTwitchVideos) {
-        twitchVideos.forEach((video, index) => {
-          cards.push({
-            key: `${entry.id}-twitch-${video.variant}-${index}`,
-            entry,
-            youtubeVideo: null,
-            twitchVideo: video
-          });
-        });
-        continue;
-      }
-
-      if (hasYoutubeVideos) {
-        youtubeVideos.forEach((video, index) => {
-          cards.push({
-            key: `${entry.id}-youtube-${video.videoId}-${index}`,
-            entry,
-            youtubeVideo: video,
-            twitchVideo: null
-          });
-        });
-      }
-
-      if (hasTwitchVideos) {
-        twitchVideos.forEach((video, index) => {
-          cards.push({
-            key: `${entry.id}-twitch-${video.variant}-${index}`,
-            entry,
-            youtubeVideo: null,
-            twitchVideo: video
-          });
-        });
-      }
-
-      if (hasYoutubeVideos || hasTwitchVideos) {
-        continue;
-      }
-
-      cards.push({
-        key: String(entry.id),
-        entry,
-        youtubeVideo: null,
-        twitchVideo: null
-      });
-    }
-
-    return cards;
-  }, [showingEntries]);
+  const displayCards = useMemo(() => buildDisplayCards(showingEntries), [showingEntries]);
 
   return (
     <>
@@ -1364,12 +1367,14 @@ export function StorageEntriesSection({
         </section>
       ) : (
         <>
-          <div className="columns-1 gap-3 md:columns-2">
+          <div className="columns-1 gap-3 md:columns-2 xl:columns-3 2xl:columns-4">
             {displayCards.map((card) => {
               const { entry, youtubeVideo, twitchVideo } = card;
               const selected = selectedEntryId === entry.id;
               const isYoutubeCard = youtubeVideo !== null;
               const isTwitchCard = twitchVideo !== null;
+              const entryTypeIcon = getEntryTypeIconConfig(entry);
+              const EntryTypeIcon = entryTypeIcon.icon;
               const cardTitle = isYoutubeCard
                 ? youtubeVideo!.title
                 : isTwitchCard
@@ -1381,26 +1386,43 @@ export function StorageEntriesSection({
                   <article
                     key={card.key}
                     className="mb-3 inline-block w-full break-inside-avoid text-left"
-                    onClick={() => {
-                      setForcedLeftEntryId(null);
-                      setForcedRightEntryId(null);
-                      setSelectedEntryId(entry.id);
-                    }}
                   >
                     <Panel
                       header={
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="break-words text-base font-extrabold leading-snug text-ink-900">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="break-words pr-2 text-base font-extrabold leading-snug text-ink-900">
                             {cardTitle}
                           </span>
-                          <TextComponentIcon className="h-6 w-6 shrink-0 text-brand-600" />
+                          <div className="flex shrink-0 items-center gap-2">
+                            {entry.notificationDate ? (
+                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                                <AlarmClockIcon className="h-4 w-4" />
+                              </span>
+                            ) : null}
+                            <EntryTypeIcon className={`h-6 w-6 ${entryTypeIcon.className}`} />
+                          </div>
                         </div>
                       }
                       className={`library-entry-panel ${selected ? "library-entry-panel-selected" : ""}`}
+                      onClick={() => {
+                        setForcedLeftEntryId(null);
+                        setForcedRightEntryId(null);
+                        setSelectedEntryId(entry.id);
+                      }}
                     >
                       <p className="break-words text-sm text-ink-700 overflow-hidden text-ellipsis [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
                         {buildEntryText(entry, t("entries.noContent"))}
                       </p>
+                      {entry.notificationDate ? (
+                        <div className="mt-2 grid gap-1">
+                          <p className="text-xs font-semibold text-amber-700">
+                            Deadline: {new Intl.DateTimeFormat("es-ES", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.notificationDate))}
+                          </p>
+                          <p className="text-xs font-semibold text-emerald-700">
+                            {buildAlarmCountdownText(entry.notificationDate)}
+                          </p>
+                        </div>
+                      ) : null}
                       {entry.tags && entry.tags.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           {entry.tags.map((tag) => (
@@ -1416,14 +1438,16 @@ export function StorageEntriesSection({
                       <div className="mt-3 flex justify-end">
                         <button
                           type="button"
-                          className="inline-flex h-9 items-center justify-center gap-2 rounded-control border border-rose-300 bg-white px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+                          className="inline-flex h-8 w-8 items-center justify-center text-rose-700 transition hover:text-rose-800"
                           aria-label={t("storage.deleteEntryAria")}
                           onClick={(event) => {
                             event.stopPropagation();
                             openDeleteEntryConfirmForEntry(entry.id);
                           }}
                         >
-                          <TrashIcon className="h-4 w-4" />
+                          <AnimateIcon animateOnHover>
+                            <SquareXIcon className="h-4 w-4" />
+                          </AnimateIcon>
                         </button>
                       </div>
                     </Panel>
@@ -1445,9 +1469,27 @@ export function StorageEntriesSection({
                     setSelectedEntryId(entry.id);
                   }}
                 >
-                  <div className="mb-2 pr-12">
+                  <div className="mb-2 pr-20">
                     <h3 className="break-words text-base font-extrabold leading-snug text-ink-900">{cardTitle}</h3>
                   </div>
+                  <EntryTypeIcon
+                    className={`pointer-events-none absolute right-4 top-4 h-7 w-7 ${entryTypeIcon.className}`}
+                  />
+                  {entry.notificationDate ? (
+                    <span className="pointer-events-none absolute right-4 top-12 inline-flex h-7 w-7 items-center justify-center rounded-full bg-amber-100 text-amber-700 shadow-sm">
+                      <AlarmClockIcon className="h-4 w-4" />
+                    </span>
+                  ) : null}
+                  {entry.notificationDate ? (
+                    <div className="mb-2 grid gap-1">
+                      <p className="text-xs font-semibold text-amber-700">
+                        Deadline: {new Intl.DateTimeFormat("es-ES", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.notificationDate))}
+                      </p>
+                      <p className="text-xs font-semibold text-emerald-700">
+                        {buildAlarmCountdownText(entry.notificationDate)}
+                      </p>
+                    </div>
+                  ) : null}
                   {isYoutubeCard && (
                     <div className="mt-2 flex justify-start">
                       {(() => {
@@ -1463,11 +1505,6 @@ export function StorageEntriesSection({
                         return <span className={badge.className}>{t(badge.labelKey)}</span>;
                       })()}
                     </div>
-                  )}
-                  {isYoutubeCard ? (
-                    <YoutubeIcon className="pointer-events-none absolute right-4 top-4 h-7 w-7 text-rose-600" />
-                  ) : (
-                    <TwitchIcon className="pointer-events-none absolute right-4 top-4 h-7 w-7 text-violet-600" />
                   )}
                   <div className="mt-2 h-px w-full bg-brand-200" />
                   {isYoutubeCard ? (
@@ -1529,14 +1566,16 @@ export function StorageEntriesSection({
                   <div className="mt-3 flex justify-end">
                     <button
                       type="button"
-                      className="inline-flex h-9 items-center justify-center gap-2 rounded-control border border-rose-300 bg-white px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+                      className="inline-flex h-8 w-8 items-center justify-center text-rose-700 transition hover:text-rose-800"
                       aria-label={t("storage.deleteEntryAria")}
                       onClick={(event) => {
                         event.stopPropagation();
                         openDeleteEntryConfirmForEntry(entry.id);
                       }}
                     >
-                      <TrashIcon className="h-4 w-4" />
+                      <AnimateIcon animateOnHover>
+                        <SquareXIcon className="h-4 w-4" />
+                      </AnimateIcon>
                     </button>
                   </div>
                 </article>
@@ -1544,51 +1583,18 @@ export function StorageEntriesSection({
             })}
           </div>
 
-          {deleteConfirmOpen && pendingDeleteEntry && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/25 p-4 backdrop-blur-sm"
-              role="dialog"
-              aria-modal="true"
-              aria-label={t("storage.deleteEntryConfirmTitle")}
-              onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  closeDeleteEntryConfirm();
-                }
-              }}
-            >
-              <section className="w-full max-w-[420px] rounded-card border border-brand-200 bg-white p-4 shadow-card md:p-5">
-                <h3 className="text-lg font-extrabold tracking-tight text-ink-900">
-                  {t("storage.deleteEntryConfirmTitle")}
-                </h3>
-                <p className="mt-2 text-sm text-ink-700">
-                  {t("storage.deleteEntryConfirmMessage")}
-                </p>
-                {deleteEntryError && (
-                  <p className={`mt-2 ${errorTextClass}`}>
-                    {t("common.errorPrefix", { message: deleteEntryError })}
-                  </p>
-                )}
-                <div className="mt-4 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="inline-flex h-9 items-center justify-center rounded-control border border-brand-200 bg-white px-3 text-sm font-semibold text-ink-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-70"
-                    onClick={closeDeleteEntryConfirm}
-                    disabled={deletingEntry}
-                  >
-                    {t("storage.deleteEntryConfirmNo")}
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex h-9 items-center justify-center rounded-control border border-rose-500 bg-rose-500 px-3 text-sm font-semibold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-70"
-                    onClick={() => void confirmDeleteSelectedEntry()}
-                    disabled={deletingEntry}
-                  >
-                    {deletingEntry ? t("common.saving") : t("storage.deleteEntryConfirmYes")}
-                  </button>
-                </div>
-              </section>
-            </div>
-          )}
+          <DeleteEntryConfirmModal
+            open={deleteConfirmOpen && pendingDeleteEntry !== null}
+            submitting={deletingEntry}
+            error={deleteEntryError ? t("common.errorPrefix", { message: deleteEntryError }) : null}
+            title={t("storage.deleteEntryConfirmTitle")}
+            message={t("storage.deleteEntryConfirmMessage")}
+            cancelLabel={t("storage.deleteEntryConfirmNo")}
+            confirmLabel={t("storage.deleteEntryConfirmYes")}
+            savingLabel={t("common.saving")}
+            onClose={closeDeleteEntryConfirm}
+            onConfirm={() => void confirmDeleteSelectedEntry()}
+          />
         </>
       )}
       </div>
@@ -1637,73 +1643,6 @@ export function StorageEntriesSection({
             <div
               className={`flex max-h-[calc(100vh-2rem)] w-full max-w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden transform-gpu transition-all duration-300 ease-out md:max-w-[560px] ${centerCardScaleClass}`}
             >
-              {false && (
-              <div className="relative flex items-center gap-2" ref={entryFoldersMenuRef}>
-                <button
-                  type="button"
-                  className={iconToggleClass(entryFoldersOpen)}
-                  aria-label={t("storage.entryFoldersToggleAria")}
-                  aria-haspopup="menu"
-                  aria-expanded={entryFoldersOpen}
-                  onClick={openEntryFoldersMenu}
-                >
-                  <StorageTabIcon className="h-6 w-6" />
-                </button>
-                <button
-                  type="button"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-white/80 bg-[linear-gradient(180deg,rgba(255,247,242,0.92)_0%,rgba(255,233,236,0.84)_100%)] text-rose-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-rose-300 hover:bg-rose-50"
-                  aria-label={t("storage.closeDetailAria")}
-                  onClick={() => void closeSelectedEntry()}
-                >
-                  <XMarkIcon className="h-5 w-5" />
-                </button>
-
-                {entryFoldersOpen && (
-                  <section
-                    className="absolute right-0 top-[calc(100%+10px)] z-40 w-[280px] max-w-[calc(100vw-3rem)] rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(250,252,255,0.96)_0%,rgba(239,244,249,0.92)_100%)] p-3 shadow-[0_18px_40px_rgba(15,23,42,0.10)] backdrop-blur-md"
-                    role="menu"
-                    aria-label={t("storage.entryFoldersMenuAria")}
-                  >
-                    {entryFoldersLoading ? (
-                      <p className="text-sm font-medium text-ink-600">{t("storage.entryFoldersLoading")}</p>
-                    ) : entryFoldersError ? (
-                      <p className="text-sm font-medium text-ink-600">{entryFoldersError}</p>
-                    ) : entryFolders.length === 0 ? (
-                      <p className="text-sm font-medium text-ink-600">{t("storage.entryFoldersEmpty")}</p>
-                    ) : (
-                      <ul className="scrollbar-brand max-h-56 space-y-1 overflow-y-auto pr-1">
-                        {entryFolders.map((folder) => (
-                          <li key={folder.id}>
-                            <button
-                              type="button"
-                              className={`flex w-full items-center justify-between rounded-control border px-2.5 py-2 text-sm font-semibold transition ${
-                                folder.selected
-                                  ? "border-brand-400 bg-brand-100 text-brand-800"
-                                  : "border-brand-200 bg-white/25 text-ink-800 hover:bg-brand-50"
-                              }`}
-                              disabled={updatingFolderId === folder.id}
-                              onClick={() => void handleToggleEntryFolder(folder)}
-                            >
-                              <span className="truncate text-left">{folder.title}</span>
-                              <span
-                                className={`ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs ${
-                                  folder.selected
-                                    ? "border-brand-500 bg-brand-500 text-white"
-                                    : "border-brand-300 text-transparent"
-                                }`}
-                              >
-                                ✓
-                              </span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                )}
-              </div>
-              )}
-
               <div className="scrollbar-brand min-h-0 overflow-y-auto pr-1">
                 <EntryDetailContent
                   ref={entryDetailContentRef}
@@ -1712,70 +1651,31 @@ export function StorageEntriesSection({
                   onEntryUpdated={onEntryUpdated}
                   onUnauthorized={onUnauthorized}
                   headerActions={
-                    <div className="relative flex items-center gap-2" ref={entryFoldersMenuRef}>
-                      <button
-                        type="button"
-                        className={iconToggleClass(entryFoldersOpen)}
-                        aria-label={t("storage.entryFoldersToggleAria")}
-                        aria-haspopup="menu"
-                        aria-expanded={entryFoldersOpen}
-                        onClick={openEntryFoldersMenu}
-                      >
-                        <StorageTabIcon className="h-6 w-6" />
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-emerald-200/85 bg-[linear-gradient(180deg,rgba(240,253,244,0.94)_0%,rgba(209,250,229,0.86)_100%)] text-emerald-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-emerald-300 hover:bg-emerald-50"
-                        aria-label={t("storage.closeDetailAria")}
-                        onClick={() => void closeSelectedEntry()}
-                      >
-                        <MotionIcon name="BookCheck" animation="bounce" className="h-5 w-5 text-emerald-700" />
-                      </button>
-
-                      {entryFoldersOpen && (
-                        <section
-                          className="absolute right-0 top-[calc(100%+10px)] z-40 w-[280px] max-w-[calc(100vw-3rem)] rounded-card border border-white/85 bg-[linear-gradient(180deg,rgba(250,252,255,0.96)_0%,rgba(239,244,249,0.92)_100%)] p-3 shadow-[0_18px_40px_rgba(15,23,42,0.10)] backdrop-blur-md"
-                          role="menu"
-                          aria-label={t("storage.entryFoldersMenuAria")}
+                    <EntryFoldersMenu
+                      open={entryFoldersOpen}
+                      loading={entryFoldersLoading}
+                      error={entryFoldersError}
+                      folders={entryFolders}
+                      updatingFolderId={updatingFolderId}
+                      menuRef={entryFoldersMenuRef}
+                      emptyLabel={t("storage.entryFoldersEmpty")}
+                      loadingLabel={t("storage.entryFoldersLoading")}
+                      menuAriaLabel={t("storage.entryFoldersMenuAria")}
+                      toggleAriaLabel={t("storage.entryFoldersToggleAria")}
+                      onToggle={openEntryFoldersMenu}
+                      onFolderToggle={handleToggleEntryFolder}
+                      toggleClassName={iconToggleClass(entryFoldersOpen)}
+                      closeAction={
+                        <button
+                          type="button"
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-control border border-emerald-200/85 bg-[linear-gradient(180deg,rgba(240,253,244,0.94)_0%,rgba(209,250,229,0.86)_100%)] text-emerald-700 shadow-[0_10px_22px_rgba(15,23,42,0.06)] transition hover:border-emerald-300 hover:bg-emerald-50"
+                          aria-label={t("storage.closeDetailAria")}
+                          onClick={() => void closeSelectedEntry()}
                         >
-                          {entryFoldersLoading ? (
-                            <p className="text-sm font-medium text-ink-600">{t("storage.entryFoldersLoading")}</p>
-                          ) : entryFoldersError ? (
-                            <p className="text-sm font-medium text-ink-600">{entryFoldersError}</p>
-                          ) : entryFolders.length === 0 ? (
-                            <p className="text-sm font-medium text-ink-600">{t("storage.entryFoldersEmpty")}</p>
-                          ) : (
-                            <ul className="scrollbar-brand max-h-56 space-y-1 overflow-y-auto pr-1">
-                              {entryFolders.map((folder) => (
-                                <li key={folder.id}>
-                                  <button
-                                    type="button"
-                                    className={`flex w-full items-center justify-between rounded-control border px-2.5 py-2 text-sm font-semibold transition ${
-                                      folder.selected
-                                        ? "border-brand-400 bg-brand-100 text-brand-800"
-                                        : "border-brand-200 bg-white/25 text-ink-800 hover:bg-brand-50"
-                                    }`}
-                                    disabled={updatingFolderId === folder.id}
-                                    onClick={() => void handleToggleEntryFolder(folder)}
-                                  >
-                                    <span className="truncate text-left">{folder.title}</span>
-                                    <span
-                                      className={`ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs ${
-                                        folder.selected
-                                          ? "border-brand-500 bg-brand-500 text-white"
-                                          : "border-brand-300 text-transparent"
-                                      }`}
-                                    >
-                                      âœ“
-                                    </span>
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </section>
-                      )}
-                    </div>
+                          <MotionIcon name="BookCheck" animation="bounce" className="h-5 w-5 text-emerald-700" />
+                        </button>
+                      }
+                    />
                   }
                 />
               </div>
@@ -1790,4 +1690,3 @@ export function StorageEntriesSection({
     </>
   );
 }
-

@@ -1,6 +1,7 @@
 import { api } from "./client";
 import type {
   AuthCredentials,
+  UpdateEmailInput,
   AuthTokenResponse,
   AuthUser,
   UpdatePasswordInput,
@@ -34,6 +35,13 @@ export function updateUsername(input: UpdateUsernameInput) {
 
 export function updatePassword(input: UpdatePasswordInput) {
   return api<AuthTokenResponse>("/auth/me/password", {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export function updateEmail(input: UpdateEmailInput) {
+  return api<AuthTokenResponse>("/auth/me/email", {
     method: "PUT",
     body: JSON.stringify(input)
   });

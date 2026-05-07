@@ -4,6 +4,7 @@ import com.pisito.app.controller.dto.auth.AuthTokenResponse;
 import com.pisito.app.controller.dto.auth.AuthUserResponse;
 import com.pisito.app.controller.dto.auth.LoginRequest;
 import com.pisito.app.controller.dto.auth.RegisterRequest;
+import com.pisito.app.controller.dto.auth.UpdateEmailRequest;
 import com.pisito.app.controller.dto.auth.UpdatePasswordRequest;
 import com.pisito.app.controller.dto.auth.UpdateUsernameRequest;
 import com.pisito.app.service.AuthService;
@@ -58,6 +59,14 @@ public class AuthController {
         @Valid @RequestBody UpdatePasswordRequest request
     ) {
         return authService.updatePassword(currentUserId(authentication), request);
+    }
+
+    @PutMapping("/me/email")
+    public AuthTokenResponse updateEmail(
+        Authentication authentication,
+        @Valid @RequestBody UpdateEmailRequest request
+    ) {
+        return authService.updateEmail(currentUserId(authentication), request);
     }
 
     private Long currentUserId(Authentication authentication) {

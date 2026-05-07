@@ -2,6 +2,7 @@ import type { FormEvent } from "react";
 import type { I18nKey } from "../../../i18n/messages";
 import { useI18n } from "../../../i18n/I18nProvider";
 import { ProfilePasswordForm } from "../profile/ProfilePasswordForm";
+import { ProfileEmailForm } from "../profile/ProfileEmailForm";
 import { ProfileUsernameForm } from "../profile/ProfileUsernameForm";
 import { ProfileLogoutButton } from "../profile/ProfileLogoutButton";
 import { errorTextClass } from "../../ui/styles";
@@ -11,6 +12,7 @@ import type { ProfileFormSection } from "./constants";
 
 type ContentInboxProfileSectionProps = {
   username: string;
+  email: string | null;
   submitting: boolean;
   error: string | null;
   activeProfileForm: ProfileFormSection | null;
@@ -18,21 +20,26 @@ type ContentInboxProfileSectionProps = {
   usernameCurrentPassword: string;
   passwordCurrent: string;
   passwordNext: string;
+  emailDraft: string;
   usernameValidationError: I18nKey | null;
   passwordValidationError: I18nKey | null;
+  emailValidationError: I18nKey | null;
   onOpenProfileForm: (section: ProfileFormSection) => void;
   onCloseProfileForm: () => void;
   onSubmitUsername: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onSubmitPassword: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  onSubmitEmail: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   onUsernameDraftChange: (value: string) => void;
   onUsernameCurrentPasswordChange: (value: string) => void;
   onPasswordCurrentChange: (value: string) => void;
   onPasswordNextChange: (value: string) => void;
+  onEmailDraftChange: (value: string) => void;
   onLogout: () => void;
 };
 
 export function ContentInboxProfileSection({
   username,
+  email,
   submitting,
   error,
   activeProfileForm,
@@ -40,16 +47,20 @@ export function ContentInboxProfileSection({
   usernameCurrentPassword,
   passwordCurrent,
   passwordNext,
+  emailDraft,
   usernameValidationError,
   passwordValidationError,
+  emailValidationError,
   onOpenProfileForm,
   onCloseProfileForm,
   onSubmitUsername,
   onSubmitPassword,
+  onSubmitEmail,
   onUsernameDraftChange,
   onUsernameCurrentPasswordChange,
   onPasswordCurrentChange,
   onPasswordNextChange,
+  onEmailDraftChange,
   onLogout
 }: ContentInboxProfileSectionProps) {
   const { t } = useI18n();
@@ -91,6 +102,23 @@ export function ContentInboxProfileSection({
               className="btn-fill-anim inline-flex h-10 w-10 items-center justify-center rounded-control border border-brand-200 bg-white text-ink-900 shadow-[0_10px_22px_rgba(19,61,81,0.05)] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
               aria-label={t("profile.editPasswordAria")}
               onClick={() => onOpenProfileForm("password")}
+            >
+              <PencilSquareIcon className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-[24px] border border-white/95 bg-[linear-gradient(180deg,rgba(255,255,255,0.99)_0%,rgba(242,242,242,0.94)_100%)] p-3 shadow-[0_14px_30px_rgba(15,15,15,0.06)] backdrop-blur-md">
+            <div className="grid gap-0.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                {t("profile.email")}
+              </p>
+              <p className="text-base font-bold text-ink-900">{email || t("profile.emailMissing")}</p>
+            </div>
+            <button
+              type="button"
+              className="btn-fill-anim inline-flex h-10 w-10 items-center justify-center rounded-control border border-brand-200 bg-white text-ink-900 shadow-[0_10px_22px_rgba(19,61,81,0.05)] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
+              aria-label={t("profile.editEmailAria")}
+              onClick={() => onOpenProfileForm("email")}
             >
               <PencilSquareIcon className="h-5 w-5" />
             </button>
@@ -158,6 +186,38 @@ export function ContentInboxProfileSection({
           {passwordValidationError ? (
             <p className={errorTextClass}>
               {t("common.errorPrefix", { message: t(passwordValidationError) })}
+            </p>
+          ) : null}
+          {error ? (
+            <p className={errorTextClass}>{t("common.errorPrefix", { message: error })}</p>
+          ) : null}
+        </GlassCard>
+      ) : null}
+
+      {activeProfileForm === "email" ? (
+        <GlassCard className="border-white/95 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(240,240,240,0.92)_100%)] p-5 shadow-[0_22px_48px_rgba(15,15,15,0.09)] md:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="heading-title text-ink-900">{t("profile.changeEmailTitle")}</h2>
+            <button
+              type="button"
+              className="btn-fill-anim inline-flex h-9 w-9 items-center justify-center rounded-control border border-brand-200 bg-white text-ink-900 shadow-[0_10px_18px_rgba(19,61,81,0.05)] [--btn-fill:#06a89d] [--btn-text-hover:#ffffff]"
+              aria-label={t("profile.hideChangeEmailAria")}
+              onClick={onCloseProfileForm}
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          </div>
+
+          <ProfileEmailForm
+            emailValue={emailDraft}
+            submitting={submitting}
+            onSubmit={onSubmitEmail}
+            onEmailChange={onEmailDraftChange}
+          />
+
+          {emailValidationError ? (
+            <p className={errorTextClass}>
+              {t("common.errorPrefix", { message: t(emailValidationError) })}
             </p>
           ) : null}
           {error ? (

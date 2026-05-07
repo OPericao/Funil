@@ -38,6 +38,7 @@ export function useStorageEntries({
   const [storageSearchResults, setStorageSearchResults] = useState<EntryItem[] | null>(null);
   const [storageSearchLoading, setStorageSearchLoading] = useState(false);
   const [storageSearchError, setStorageSearchError] = useState<string | null>(null);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [entryToOpenFromNotifications, setEntryToOpenFromNotifications] = useState<number | null>(null);
 
   const loadStorageEntries = useCallback(async () => {
@@ -78,11 +79,33 @@ export function useStorageEntries({
   }, [activeSection, loadStorageEntries]);
 
   useEffect(() => {
-    if (!notificationsOpen || storageEntries.length > 0) {
+    if (!notificationsOpen) {
       return;
     }
-    void loadStorageEntries();
-  }, [loadStorageEntries, notificationsOpen, storageEntries.length]);
+    const loadNotificationsEntries = async () => {
+      try {
+        setNotificationsLoading(true);
+        const entriesData = await fetchEntries();
+        const latestEntries = dedupeEntries(entriesData);
+        setStorageEntries(latestEntries);
+        setStorageSearchResults((current) =>
+          current === null
+            ? null
+            : current.filter((entry) => latestEntries.some((latestEntry) => latestEntry.id === entry.id))
+        );
+      } catch (requestError) {
+        if (isApiError(requestError) && requestError.status === 401) {
+          onUnauthorized();
+          return;
+        }
+        setStorageError(readErrorMessage(requestError, t("common.unexpectedError")));
+      } finally {
+        setNotificationsLoading(false);
+      }
+    };
+
+    void loadNotificationsEntries();
+  }, [notificationsOpen, onUnauthorized, t]);
 
   useEffect(() => {
     const query = storageSearchValue.trim();
@@ -196,6 +219,7 @@ export function useStorageEntries({
     storageSearchResults,
     storageSearchLoading,
     storageSearchError,
+    notificationsLoading,
     setStorageSearchValue,
     loadStorageEntries,
     notificationEntries,

@@ -512,6 +512,7 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
   const [savingField, setSavingField] = useState<"title" | "text" | null>(null);
   const [detailSaveError, setDetailSaveError] = useState<string | null>(null);
   const [detailSaveSuccess, setDetailSaveSuccess] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const pendingTextSaveRef = useRef<Promise<boolean> | null>(null);
 
   const selectedEntryLinks = useMemo(() => getEntryLinks(entry), [entry]);
@@ -552,6 +553,38 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
     setDetailSaveError(null);
     setDetailSaveSuccess(null);
   }, [entry, selectedTextResource]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  function buildAlarmCountdownText(notificationDate: string | null) {
+    if (!notificationDate) {
+      return null;
+    }
+    const deadlineMs = Date.parse(notificationDate);
+    if (Number.isNaN(deadlineMs)) {
+      return null;
+    }
+    const diffMs = deadlineMs - nowMs;
+    if (diffMs <= 0) {
+      return "Vencida";
+    }
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const minutes = totalMinutes % 60;
+    if (days > 0) {
+      return `Queda ${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+      return `Queda ${hours}h ${minutes}m`;
+    }
+    return `Queda ${minutes}m`;
+  }
 
   function clearTextFeedback() {
     if (detailSaveError) {
@@ -688,6 +721,16 @@ export const EntryDetailContent = forwardRef<EntryDetailContentHandle, EntryDeta
         className="notes-panel"
       >
         <div className="grid gap-4">
+          {entry.notificationDate ? (
+            <div className="grid gap-1 rounded-control border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-xs font-semibold text-amber-800">
+                Deadline: {new Intl.DateTimeFormat("es-ES", { dateStyle: "medium", timeStyle: "short" }).format(new Date(entry.notificationDate))}
+              </p>
+              <p className="text-xs font-semibold text-emerald-700">
+                {buildAlarmCountdownText(entry.notificationDate)}
+              </p>
+            </div>
+          ) : null}
           <div className="min-w-0 w-full overflow-hidden">
             {true ? (
               <div className="grid gap-2">

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { getMe, login, register, updatePassword, updateUsername } from "../api/auth";
+import { getMe, login, register, updateEmail, updatePassword, updateUsername } from "../api/auth";
 import { clearAccessToken, getAccessToken, setAccessToken } from "../api/client";
 import { useI18n } from "../i18n/I18nProvider";
 import type {
   AuthCredentials,
   AuthTokenResponse,
   AuthUser,
+  UpdateEmailInput,
   UpdatePasswordInput,
   UpdateUsernameInput
 } from "../types/auth";
@@ -93,6 +94,11 @@ export function useAuthSession() {
     [executeAuth]
   );
 
+  const updateEmailUser = useCallback(
+    async (input: UpdateEmailInput) => executeAuth(() => updateEmail(input)),
+    [executeAuth]
+  );
+
   const clearAuthError = useCallback(() => {
     setAuthError(null);
   }, []);
@@ -118,6 +124,7 @@ export function useAuthSession() {
     registerUser,
     updateUsernameUser,
     updatePasswordUser,
+    updateEmailUser,
     clearAuthError,
     logout,
     expireSession

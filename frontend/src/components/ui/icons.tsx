@@ -1,10 +1,10 @@
 import frameImage from "../../assets/Frame.png";
-import spotifyImage from "../../assets/spotify.svg";
 import { BookCheck } from "lucide-react";
 import { motion } from "motion/react";
 import { CompassIcon as AnimateCompassIcon } from "../animate-ui/icons/compass";
 import { LinkIcon as AnimateLinkIcon } from "../animate-ui/icons/link";
 import { SendIcon as AnimateSendIcon } from "../animate-ui/icons/send";
+import { SquareXIcon as AnimateSquareXIcon } from "../animate-ui/icons/square-x";
 import { TimerIcon as AnimateTimerIcon } from "../animate-ui/icons/timer";
 import { UnplugIcon as AnimateUnplugIcon } from "../animate-ui/icons/unplug";
 import { UserRoundIcon as AnimateUserRoundIcon } from "../animate-ui/icons/user-round";
@@ -63,20 +63,24 @@ export function FrameIcon({ className }: IconProps) {
 
 export function MusicalNoteIcon({ className }: IconProps) {
   return (
-    <span
-      className={`inline-block bg-current ${className}`}
-      style={{
-        WebkitMaskImage: `url(${spotifyImage})`,
-        maskImage: `url(${spotifyImage})`,
-        WebkitMaskRepeat: "no-repeat",
-        maskRepeat: "no-repeat",
-        WebkitMaskPosition: "center",
-        maskPosition: "center",
-        WebkitMaskSize: "contain",
-        maskSize: "contain"
-      }}
-      aria-hidden="true"
-    />
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" focusable="false">
+      <path
+        d="M16.632 15.204a.75.75 0 0 1-1.032.25 7.786 7.786 0 0 0-4.069-1.13 7.86 7.86 0 0 0-2.988.59.75.75 0 1 1-.565-1.39 9.357 9.357 0 0 1 3.553-.7 9.29 9.29 0 0 1 4.851 1.348.75.75 0 0 1 .25 1.032Z"
+        fill="currentColor"
+      />
+      <path
+        d="M17.896 12.075a.75.75 0 0 1-1.024.293 11.448 11.448 0 0 0-5.534-1.44 11.5 11.5 0 0 0-4.48.905.75.75 0 1 1-.583-1.382 13 13 0 0 1 5.063-1.023 12.946 12.946 0 0 1 6.266 1.633.75.75 0 0 1 .292 1.014Z"
+        fill="currentColor"
+      />
+      <path
+        d="M18.816 8.932a.75.75 0 0 1-1.02.303 14.966 14.966 0 0 0-6.963-1.718 15.15 15.15 0 0 0-5.474 1.02.75.75 0 0 1-.536-1.401 16.649 16.649 0 0 1 6.01-1.119c2.684 0 5.29.643 7.673 1.894a.75.75 0 0 1 .31 1.021Z"
+        fill="currentColor"
+      />
+      <path
+        d="M12 2.25C6.615 2.25 2.25 6.615 2.25 12S6.615 21.75 12 21.75 21.75 17.385 21.75 12 17.385 2.25 12 2.25Zm0 18a8.25 8.25 0 1 1 0-16.5 8.25 8.25 0 0 1 0 16.5Z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }
 
@@ -90,6 +94,10 @@ export function CompassIcon({ className }: IconProps) {
 
 export function SendIcon({ className }: IconProps) {
   return <AnimateSendIcon className={className} size={24} animateOnHover />;
+}
+
+export function SquareXIcon({ className }: IconProps) {
+  return <AnimateSquareXIcon className={className} size={24} animateOnHover />;
 }
 
 export function UnplugIcon({ className }: IconProps) {

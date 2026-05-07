@@ -4,7 +4,11 @@ import { createEntry, uploadFile } from "../../../../api/resources";
 import { useI18n } from "../../../../i18n/I18nProvider";
 import type { CreateEntryResourceInput } from "../../../../types/resource";
 import { readErrorMessage } from "../../../../utils/error";
-import { serializeRichTextPayload, supportsRichTextEntryFlag } from "../../../../utils/richText";
+import {
+  extractPrimaryLinkUrl,
+  serializeRichTextPayload,
+  supportsRichTextEntryFlag
+} from "../../../../utils/richText";
 import type { InboxEntryFormValues } from "../../InboxEntryCreateForm";
 import { INITIAL_INBOX_ENTRY_FORM } from "../constants";
 import { resolveEntryFlag } from "../utils";
@@ -36,6 +40,7 @@ export function useInboxEntryCreation({ onUnauthorized }: UseInboxEntryCreationP
   const handleCreateInboxEntry = useCallback(async () => {
     const title = inboxEntryForm.title.trim();
     const textContent = inboxEntryForm.textContent.trim();
+    const linkUrl = extractPrimaryLinkUrl(inboxEntryForm.textContentHtml, textContent);
     const activeFlag = resolveEntryFlag(inboxEntryForm);
 
     if (activeFlag === "YOUTUBE" && !textContent) {
@@ -48,7 +53,7 @@ export function useInboxEntryCreation({ onUnauthorized }: UseInboxEntryCreationP
       return;
     }
 
-    if (activeFlag === "LINK" && !textContent) {
+    if (activeFlag === "LINK" && !linkUrl) {
       setInboxError(t("entries.linkRequired"));
       return;
     }
@@ -59,7 +64,7 @@ export function useInboxEntryCreation({ onUnauthorized }: UseInboxEntryCreationP
         activeFlag === "LINK"
           ? {
               type: "LINK",
-              url: textContent
+              url: linkUrl!
             }
           : {
               type: "RAW",

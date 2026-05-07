@@ -15,9 +15,14 @@ export type UpdatePasswordInput = {
   newPassword: string;
 };
 
+export type UpdateEmailInput = {
+  email: string;
+};
+
 export type AuthUser = {
   id: number;
   username: string;
+  email: string | null;
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;

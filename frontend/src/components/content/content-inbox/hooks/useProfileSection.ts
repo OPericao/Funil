@@ -1,21 +1,25 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { validatePassword, validateUsername } from "../../../../features/auth/formValidation";
+import { validateEmail, validatePassword, validateUsername } from "../../../../features/auth/formValidation";
 import { useI18n } from "../../../../i18n/I18nProvider";
 import type { I18nKey } from "../../../../i18n/messages";
-import type { UpdatePasswordInput, UpdateUsernameInput } from "../../../../types/auth";
+import type { UpdateEmailInput, UpdatePasswordInput, UpdateUsernameInput } from "../../../../types/auth";
 import type { ProfileFormSection } from "../constants";
 
 type UseProfileSectionParams = {
   username: string;
+  email: string | null;
   onUpdateUsername: (input: UpdateUsernameInput) => Promise<boolean> | boolean;
   onUpdatePassword: (input: UpdatePasswordInput) => Promise<boolean> | boolean;
+  onUpdateEmail: (input: UpdateEmailInput) => Promise<boolean> | boolean;
   onClearError: () => void;
 };
 
 export function useProfileSection({
   username,
+  email,
   onUpdateUsername,
   onUpdatePassword,
+  onUpdateEmail,
   onClearError
 }: UseProfileSectionParams) {
   const { t } = useI18n();
@@ -23,21 +27,30 @@ export function useProfileSection({
   const [usernameCurrentPassword, setUsernameCurrentPassword] = useState("");
   const [passwordCurrent, setPasswordCurrent] = useState("");
   const [passwordNext, setPasswordNext] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
   const [usernameValidationError, setUsernameValidationError] = useState<I18nKey | null>(null);
   const [passwordValidationError, setPasswordValidationError] = useState<I18nKey | null>(null);
+  const [emailValidationError, setEmailValidationError] = useState<I18nKey | null>(null);
   const [usernameMessage, setUsernameMessage] = useState<string | null>(null);
   const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const [emailMessage, setEmailMessage] = useState<string | null>(null);
   const [activeProfileForm, setActiveProfileForm] = useState<ProfileFormSection | null>(null);
 
   useEffect(() => {
     setUsernameDraft("");
   }, [username]);
 
+  useEffect(() => {
+    setEmailDraft(email ?? "");
+  }, [email]);
+
   const resetProfileFeedback = useCallback(() => {
     setUsernameValidationError(null);
     setPasswordValidationError(null);
+    setEmailValidationError(null);
     setUsernameMessage(null);
     setPasswordMessage(null);
+    setEmailMessage(null);
     setActiveProfileForm(null);
     onClearError();
   }, [onClearError]);
@@ -47,8 +60,10 @@ export function useProfileSection({
       setActiveProfileForm(section);
       setUsernameValidationError(null);
       setPasswordValidationError(null);
+      setEmailValidationError(null);
       setUsernameMessage(null);
       setPasswordMessage(null);
+      setEmailMessage(null);
       onClearError();
     },
     [onClearError]
@@ -58,6 +73,7 @@ export function useProfileSection({
     setActiveProfileForm(null);
     setUsernameValidationError(null);
     setPasswordValidationError(null);
+    setEmailValidationError(null);
     onClearError();
   }, [onClearError]);
 
@@ -69,6 +85,8 @@ export function useProfileSection({
       setUsernameMessage(null);
       setPasswordValidationError(null);
       setPasswordMessage(null);
+      setEmailValidationError(null);
+      setEmailMessage(null);
       onClearError();
 
       const usernameError = validateUsername(usernameDraft);
@@ -107,6 +125,8 @@ export function useProfileSection({
       setPasswordMessage(null);
       setUsernameValidationError(null);
       setUsernameMessage(null);
+      setEmailValidationError(null);
+      setEmailMessage(null);
       onClearError();
 
       const currentPasswordError = validatePassword(passwordCurrent);
@@ -141,6 +161,38 @@ export function useProfileSection({
       setActiveProfileForm(null);
     },
     [onClearError, onUpdatePassword, passwordCurrent, passwordNext, t]
+  );
+
+  const handleUpdateEmail = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setActiveProfileForm("email");
+      setEmailValidationError(null);
+      setEmailMessage(null);
+      setUsernameValidationError(null);
+      setUsernameMessage(null);
+      setPasswordValidationError(null);
+      setPasswordMessage(null);
+      onClearError();
+
+      const emailError = validateEmail(emailDraft);
+      if (emailError) {
+        setEmailValidationError(emailError);
+        return;
+      }
+
+      const success = await onUpdateEmail({
+        email: emailDraft.trim().toLowerCase()
+      });
+
+      if (!success) {
+        return;
+      }
+
+      setEmailMessage(t("profile.emailUpdated"));
+      setActiveProfileForm(null);
+    },
+    [emailDraft, onClearError, onUpdateEmail, t]
   );
 
   const handleUsernameDraftChange = useCallback(
@@ -183,24 +235,39 @@ export function useProfileSection({
     [onClearError]
   );
 
+  const handleEmailDraftChange = useCallback(
+    (value: string) => {
+      setEmailDraft(value);
+      onClearError();
+      setEmailValidationError(null);
+      setEmailMessage(null);
+    },
+    [onClearError]
+  );
+
   return {
     usernameDraft,
     usernameCurrentPassword,
     passwordCurrent,
     passwordNext,
+    emailDraft,
     usernameValidationError,
     passwordValidationError,
+    emailValidationError,
     usernameMessage,
     passwordMessage,
+    emailMessage,
     activeProfileForm,
     resetProfileFeedback,
     openProfileForm,
     closeProfileForm,
     handleUpdateUsername,
     handleUpdatePassword,
+    handleUpdateEmail,
     handleUsernameDraftChange,
     handleUsernameCurrentPasswordChange,
     handlePasswordCurrentChange,
-    handlePasswordNextChange
+    handlePasswordNextChange,
+    handleEmailDraftChange
   };
 }

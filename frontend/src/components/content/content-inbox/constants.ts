@@ -2,7 +2,7 @@ import type { AppLanguage, I18nKey } from "../../../i18n/messages";
 import type { InboxEntryFormValues } from "../InboxEntryCreateForm";
 
 export type InboxSection = "explore" | "storage" | "inbox" | "relationshipGraph" | "profile";
-export type ProfileFormSection = "username" | "password";
+export type ProfileFormSection = "username" | "password" | "email";
 
 export const INITIAL_INBOX_ENTRY_FORM: InboxEntryFormValues = {
   title: "",

@@ -1,4 +1,4 @@
-import type { Ref } from "react";
+import { useEffect, useState, type Ref } from "react";
 import LogoyTextoFunil from "../../../assets/LogoyTextoFunil.svg";
 import { useI18n } from "../../../i18n/I18nProvider";
 import type { I18nKey } from "../../../i18n/messages";
@@ -24,7 +24,7 @@ type ContentInboxHeaderProps = {
   onToggleSettings: () => void;
   onCloseMenus: () => void;
   notificationEntries: EntryItem[];
-  storageLoading: boolean;
+  notificationsLoading: boolean;
   notificationDateFormatter: Intl.DateTimeFormat;
   onNotificationSelect: (entryId: number) => void;
 };
@@ -59,11 +59,50 @@ export function ContentInboxHeader({
   onToggleSettings,
   onCloseMenus,
   notificationEntries,
-  storageLoading,
+  notificationsLoading,
   notificationDateFormatter,
   onNotificationSelect
 }: ContentInboxHeaderProps) {
   const { language, setLanguage, t } = useI18n();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  function buildCountdownText(notificationDate: string | null) {
+    if (!notificationDate) {
+      return "";
+    }
+    const deadlineMs = Date.parse(notificationDate);
+    if (Number.isNaN(deadlineMs)) {
+      return "";
+    }
+
+    const diffMs = deadlineMs - now;
+    if (diffMs <= 0) {
+      return "Vencida";
+    }
+
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const minutes = totalMinutes % 60;
+
+    if (days > 0) {
+      return `Queda ${days}d ${hours}h`;
+    }
+    if (hours > 0) {
+      return `Queda ${hours}h ${minutes}m`;
+    }
+    return `Queda ${minutes}m`;
+  }
 
   return (
     <header className="absolute inset-x-0 top-0 z-30 flex h-16 items-center justify-between border-b border-white/95 bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(238,238,238,0.9)_100%)] px-4 backdrop-blur-md sm:px-6">
@@ -123,7 +162,7 @@ export function ContentInboxHeader({
               </p>
 
               <div className="scrollbar-brand mt-2 max-h-80 overflow-y-auto pr-1">
-                {storageLoading ? (
+                {notificationsLoading ? (
                   <p className="text-sm text-ink-600">{t("storage.loading")}</p>
                 ) : notificationEntries.length === 0 ? (
                   <p className="text-sm text-ink-600">{t("notifications.empty")}</p>
@@ -137,10 +176,11 @@ export function ContentInboxHeader({
                           onClick={() => onNotificationSelect(entry.id)}
                         >
                           <p className="truncate text-sm font-semibold text-ink-900">{entry.title}</p>
-                          <p className="mt-0.5 text-xs text-ink-600">
-                            {entry.notificationDate
-                              ? notificationDateFormatter.format(new Date(entry.notificationDate))
-                              : ""}
+                          <p className="mt-0.5 text-xs font-semibold text-amber-700">
+                            {entry.notificationDate ? `Deadline: ${notificationDateFormatter.format(new Date(entry.notificationDate))}` : ""}
+                          </p>
+                          <p className="mt-0.5 text-xs font-semibold text-emerald-700">
+                            {buildCountdownText(entry.notificationDate)}
                           </p>
                         </button>
                       </li>

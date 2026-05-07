@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../../i18n/I18nProvider";
-import type { UpdatePasswordInput, UpdateUsernameInput } from "../../types/auth";
+import type { UpdateEmailInput, UpdatePasswordInput, UpdateUsernameInput } from "../../types/auth";
 import { SuccessToast } from "../ui/SuccessToast";
 import { InboxEntryCreateForm } from "./InboxEntryCreateForm";
 import { ExploreAssistantSection } from "./explore/ExploreAssistantSection";
@@ -22,10 +22,12 @@ import { useStorageEntries } from "./content-inbox/hooks/useStorageEntries";
 
 type ContentInboxProps = {
   username: string;
+  email: string | null;
   submitting: boolean;
   error: string | null;
   onUpdateUsername: (input: UpdateUsernameInput) => Promise<boolean> | boolean;
   onUpdatePassword: (input: UpdatePasswordInput) => Promise<boolean> | boolean;
+  onUpdateEmail: (input: UpdateEmailInput) => Promise<boolean> | boolean;
   onClearError: () => void;
   onLogout: () => void;
 };
@@ -38,10 +40,12 @@ type SectionTransition = {
 
 export function ContentInbox({
   username,
+  email,
   submitting,
   error,
   onUpdateUsername,
   onUpdatePassword,
+  onUpdateEmail,
   onClearError,
   onLogout
 }: ContentInboxProps) {
@@ -66,8 +70,10 @@ export function ContentInbox({
   const inboxEntry = useInboxEntryCreation({ onUnauthorized: onLogout });
   const profile = useProfileSection({
     username,
+    email,
     onUpdateUsername,
     onUpdatePassword,
+    onUpdateEmail,
     onClearError
   });
   const headerMenus = useInboxHeaderMenus();
@@ -78,7 +84,7 @@ export function ContentInbox({
   });
 
   const successToastMessage =
-    profile.usernameMessage ?? profile.passwordMessage ?? inboxEntry.inboxMessage;
+    profile.usernameMessage ?? profile.passwordMessage ?? profile.emailMessage ?? inboxEntry.inboxMessage;
 
   useEffect(() => {
     const nextSection = sectionFromPath(location.pathname);
@@ -170,6 +176,7 @@ export function ContentInbox({
       return (
         <ContentInboxProfileSection
           username={username}
+          email={email}
           submitting={submitting}
           error={error}
           activeProfileForm={profile.activeProfileForm}
@@ -177,16 +184,20 @@ export function ContentInbox({
           usernameCurrentPassword={profile.usernameCurrentPassword}
           passwordCurrent={profile.passwordCurrent}
           passwordNext={profile.passwordNext}
+          emailDraft={profile.emailDraft}
           usernameValidationError={profile.usernameValidationError}
           passwordValidationError={profile.passwordValidationError}
+          emailValidationError={profile.emailValidationError}
           onOpenProfileForm={profile.openProfileForm}
           onCloseProfileForm={profile.closeProfileForm}
           onSubmitUsername={profile.handleUpdateUsername}
           onSubmitPassword={profile.handleUpdatePassword}
+          onSubmitEmail={profile.handleUpdateEmail}
           onUsernameDraftChange={profile.handleUsernameDraftChange}
           onUsernameCurrentPasswordChange={profile.handleUsernameCurrentPasswordChange}
           onPasswordCurrentChange={profile.handlePasswordCurrentChange}
           onPasswordNextChange={profile.handlePasswordNextChange}
+          onEmailDraftChange={profile.handleEmailDraftChange}
           onLogout={onLogout}
         />
       );
@@ -232,8 +243,8 @@ export function ContentInbox({
   function renderSectionPanel(section: InboxSection) {
     if (section === "storage") {
       return (
-        <div className="h-full">
-          <div className="mx-auto h-full w-full max-w-[940px]">
+        <div className="h-full px-4 py-4 sm:px-6">
+          <div className="h-full w-full">
             {renderSectionContent(section)}
           </div>
         </div>
@@ -271,7 +282,7 @@ export function ContentInbox({
           onToggleSettings={headerMenus.toggleSettings}
           onCloseMenus={headerMenus.closeMenus}
           notificationEntries={storage.notificationEntries}
-          storageLoading={storage.storageLoading}
+          notificationsLoading={storage.notificationsLoading}
           notificationDateFormatter={storage.notificationDateFormatter}
           onNotificationSelect={handleNotificationSelect}
         />

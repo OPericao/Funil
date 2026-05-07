@@ -4,6 +4,7 @@ import com.pisito.app.controller.dto.auth.AuthTokenResponse;
 import com.pisito.app.controller.dto.auth.AuthUserResponse;
 import com.pisito.app.controller.dto.auth.LoginRequest;
 import com.pisito.app.controller.dto.auth.RegisterRequest;
+import com.pisito.app.controller.dto.auth.UpdateEmailRequest;
 import com.pisito.app.controller.dto.auth.UpdatePasswordRequest;
 import com.pisito.app.controller.dto.auth.UpdateUsernameRequest;
 import com.pisito.app.model.User;
@@ -104,6 +105,14 @@ public class AuthService {
         return toTokenResponse(user);
     }
 
+    @Transactional
+    public AuthTokenResponse updateEmail(Long userId, UpdateEmailRequest request) {
+        User user = getUserOrThrow(userId);
+        user.setEmail(normalizeEmail(request.getEmail()));
+        userRepository.save(user);
+        return toTokenResponse(user);
+    }
+
     private User getUserOrThrow(Long userId) {
         return userRepository.findById(userId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
@@ -143,10 +152,22 @@ public class AuthService {
         return password;
     }
 
+    private String normalizeEmail(String email) {
+        if (!StringUtils.hasText(email)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "email is required");
+        }
+        String normalized = email.trim().toLowerCase(Locale.ROOT);
+        if (normalized.length() > 120) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "email length must be at most 120 chars");
+        }
+        return normalized;
+    }
+
     private AuthUserResponse toResponse(User user) {
         return new AuthUserResponse(
             user.getId(),
-            user.getUsername()
+            user.getUsername(),
+            user.getEmail()
         );
     }
 
