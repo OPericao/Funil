@@ -27,6 +27,9 @@ public class CreateEntryResourceRequest {
     @Size(max = 120)
     private String mimeType;
 
+    @Size(max = 12000)
+    private String extractedText;
+
     public ResourceType getType() {
         return type;
     }
@@ -81,6 +84,14 @@ public class CreateEntryResourceRequest {
 
     public void setMimeType(String mimeType) {
         this.mimeType = mimeType;
+    }
+
+    public String getExtractedText() {
+        return extractedText;
+    }
+
+    public void setExtractedText(String extractedText) {
+        this.extractedText = extractedText;
     }
 }
 

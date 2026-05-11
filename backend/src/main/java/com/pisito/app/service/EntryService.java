@@ -91,6 +91,7 @@ public class EntryService {
     private final EntrySemanticIndexService entrySemanticIndexService;
     private final EntryVectorStoreService entryVectorStoreService;
     private final EntryProcessingService entryProcessingService;
+    private final FileStorageService fileStorageService;
     private final ObjectMapper objectMapper;
 
     public EntryService(
@@ -108,6 +109,7 @@ public class EntryService {
         EntrySemanticIndexService entrySemanticIndexService,
         EntryVectorStoreService entryVectorStoreService,
         EntryProcessingService entryProcessingService,
+        FileStorageService fileStorageService,
         ObjectMapper objectMapper
     ) {
         this.entryRepository = entryRepository;
@@ -124,6 +126,7 @@ public class EntryService {
         this.entrySemanticIndexService = entrySemanticIndexService;
         this.entryVectorStoreService = entryVectorStoreService;
         this.entryProcessingService = entryProcessingService;
+        this.fileStorageService = fileStorageService;
         this.objectMapper = objectMapper;
     }
 
@@ -311,31 +314,30 @@ public class EntryService {
             }
             if (resource instanceof TextResource textResource
                 && StringUtils.hasText(textResource.getTextContent())) {
-                if (!allTextContent.isEmpty()) {
-                    allTextContent.append('\n');
-                }
-                allTextContent.append(RichTextContentUtils.extractPlainText(textResource.getTextContent()));
+                appendContextText(allTextContent, RichTextContentUtils.extractPlainText(textResource.getTextContent()));
             }
             if (resource instanceof LinkResource linkResource) {
                 String linkContext = buildLinkContext(linkResource);
                 if (firstTextContent == null && StringUtils.hasText(linkContext)) {
                     firstTextContent = linkContext;
                 }
-                if (StringUtils.hasText(linkContext)) {
-                    if (!allTextContent.isEmpty()) {
-                        allTextContent.append('\n');
-                    }
-                    allTextContent.append(linkContext);
-                }
+                appendContextText(allTextContent, linkContext);
             }
             if (resource instanceof MediaResource mediaResource) {
+                hydrateMediaResourceExtractedText(mediaResource);
                 String fileName = trimOrNull(mediaResource.getFileName());
+                String extractedText = trimOrNull(mediaResource.getExtractedText());
                 if (!StringUtils.hasText(fileName)) {
                     fileName = extractFileNameFromStorageKey(mediaResource.getStorageKey());
                 }
+                if (firstTextContent == null && StringUtils.hasText(extractedText)) {
+                    firstTextContent = extractedText;
+                }
                 if (StringUtils.hasText(fileName)) {
                     uploadedFileNames.add(fileName);
+                    appendContextText(allTextContent, fileName);
                 }
+                appendContextText(allTextContent, extractedText);
             }
         }
 
@@ -375,10 +377,7 @@ public class EntryService {
                 .filter(StringUtils::hasText)
                 .collect(Collectors.joining("\n"));
             if (StringUtils.hasText(youtubeContext)) {
-                if (!allTextContent.isEmpty()) {
-                    allTextContent.append('\n');
-                }
-                allTextContent.append(youtubeContext);
+                appendContextText(allTextContent, youtubeContext);
                 firstTextContent = youtubeLinks.get(0).title();
             }
         }
@@ -409,10 +408,7 @@ public class EntryService {
                 .filter(StringUtils::hasText)
                 .collect(Collectors.joining("\n"));
             if (StringUtils.hasText(twitchContext)) {
-                if (!allTextContent.isEmpty()) {
-                    allTextContent.append('\n');
-                }
-                allTextContent.append(twitchContext);
+                appendContextText(allTextContent, twitchContext);
                 firstTextContent = twitchLinks.get(0).title();
             }
         }
@@ -516,6 +512,8 @@ public class EntryService {
         resource.setStorageKey(trimRequired(request.getStorageKey(), "storageKey is required"));
         resource.setFileName(trimOrNull(request.getFileName()));
         resource.setMimeType(trimOrNull(request.getMimeType()));
+        resource.setExtractedText(trimOrNull(request.getExtractedText()));
+        hydrateMediaResourceExtractedText(resource);
         return saveResource(userId, entryId, resource);
     }
 
@@ -603,6 +601,7 @@ public class EntryService {
                 resource.setStorageKey(trimRequired(request.getStorageKey(), "storageKey is required for MEDIA"));
                 resource.setFileName(trimOrNull(request.getFileName()));
                 resource.setMimeType(trimOrNull(request.getMimeType()));
+                resource.setExtractedText(trimOrNull(request.getExtractedText()));
                 yield resource;
             }
         };
@@ -736,6 +735,16 @@ public class EntryService {
         return value == null ? "" : value.trim();
     }
 
+    private static void appendContextText(StringBuilder allTextContent, String text) {
+        if (!StringUtils.hasText(text)) {
+            return;
+        }
+        if (!allTextContent.isEmpty()) {
+            allTextContent.append('\n');
+        }
+        allTextContent.append(text.trim());
+    }
+
     private LinkResource buildLinkResource(String requestedTitle, String url) {
         LinkResource resource = new LinkResource();
         resource.setUrl(url);
@@ -772,6 +781,23 @@ public class EntryService {
             normalized = normalized.substring(0, slashIndex);
         }
         return trimOrNull(normalized);
+    }
+
+    private void hydrateMediaResourceExtractedText(MediaResource resource) {
+        if (resource == null || StringUtils.hasText(resource.getExtractedText())) {
+            return;
+        }
+
+        String fileName = trimOrNull(resource.getFileName());
+        if (!StringUtils.hasText(fileName)) {
+            fileName = extractFileNameFromStorageKey(resource.getStorageKey());
+        }
+
+        resource.setExtractedText(fileStorageService.extractStoredText(
+            resource.getStorageKey(),
+            fileName,
+            resource.getMimeType()
+        ));
     }
 
     private String firstNonBlank(String... values) {

@@ -1,9 +1,9 @@
 import { FormEvent, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { validatePassword, validateUsername } from "../../features/auth/formValidation";
+import { validateEmail, validatePassword, validateUsername } from "../../features/auth/formValidation";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { I18nKey } from "../../i18n/messages";
-import type { AuthCredentials } from "../../types/auth";
+import type { RegisterCredentials } from "../../types/auth";
 import { Button, buttonClass } from "../ui/Button";
 import { ArrowLongLeftIcon } from "../ui/icons";
 import { errorTextClass, fieldLabelClass, inputClass, pageTitleClass } from "../ui/styles";
@@ -12,7 +12,7 @@ import "../../styles/tailwind.css";
 type RegisterFormProps = {
   submitting: boolean;
   error: string | null;
-  onSubmit: (credentials: AuthCredentials) => Promise<void> | void;
+  onSubmit: (credentials: RegisterCredentials) => Promise<void> | void;
 };
 
 function validateConfirmPassword(password: string, confirmPassword: string): I18nKey | null {
@@ -28,6 +28,7 @@ function validateConfirmPassword(password: string, confirmPassword: string): I18
 export function RegisterForm({ submitting, error, onSubmit }: RegisterFormProps) {
   const { t } = useI18n();
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitAttempted, setSubmitAttempted] = useState(false);
@@ -36,6 +37,10 @@ export function RegisterForm({ submitting, error, onSubmit }: RegisterFormProps)
   const usernameError = useMemo(
     () => (submitAttempted ? validateUsername(username) : null),
     [submitAttempted, username]
+  );
+  const emailError = useMemo(
+    () => (submitAttempted && email.trim() ? validateEmail(email) : null),
+    [submitAttempted, email]
   );
   const passwordError = useMemo(
     () => (submitAttempted ? validatePassword(password) : null),
@@ -46,6 +51,7 @@ export function RegisterForm({ submitting, error, onSubmit }: RegisterFormProps)
     [submitAttempted, password, confirmPassword]
   );
   const usernameErrorText = username.trim() ? usernameError : null;
+  const emailErrorText = email.trim() ? emailError : null;
   const passwordErrorText = password ? passwordError : null;
   const confirmPasswordErrorText = confirmPassword ? confirmPasswordError : null;
 
@@ -54,13 +60,19 @@ export function RegisterForm({ submitting, error, onSubmit }: RegisterFormProps)
     setSubmitAttempted(true);
 
     const nextUsernameError = validateUsername(username);
+    const normalizedEmail = email.trim().toLowerCase();
+    const nextEmailError = normalizedEmail ? validateEmail(normalizedEmail) : null;
     const nextPasswordError = validatePassword(password);
     const nextConfirmPasswordError = validateConfirmPassword(password, confirmPassword);
-    if (nextUsernameError || nextPasswordError || nextConfirmPasswordError) {
+    if (nextUsernameError || nextEmailError || nextPasswordError || nextConfirmPasswordError) {
       return;
     }
 
-    await onSubmit({ username: normalizedUsername, password });
+    await onSubmit({
+      username: normalizedUsername,
+      password,
+      ...(normalizedEmail ? { email: normalizedEmail } : {})
+    });
   }
 
   return (
@@ -105,6 +117,22 @@ export function RegisterForm({ submitting, error, onSubmit }: RegisterFormProps)
               onChange={(event) => setUsername(event.target.value)}
             />
             {usernameErrorText && <p className="text-sm font-medium text-rose-700 font-['Inter']">{t(usernameErrorText)}</p>}
+          </label>
+
+          <label className={`${fieldLabelClass} ${emailError ? "text-rose-700" : ""} font-['Inter']`}>
+            <span>{t("auth.emailLabelOptional")}</span>
+            <input
+              type="email"
+              maxLength={255}
+              autoComplete="email"
+              placeholder={t("auth.emailPlaceholder")}
+              className={`${inputClass} ${emailError ? "border-rose-500 focus:border-rose-600 focus:ring-rose-100" : ""} font-['Inter']`}
+              aria-invalid={Boolean(emailError)}
+              value={email}
+              disabled={submitting}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+            {emailErrorText && <p className="text-sm font-medium text-rose-700 font-['Inter']">{t(emailErrorText)}</p>}
           </label>
 
           <label className={`${fieldLabelClass} ${passwordError ? "text-rose-700" : ""} font-['Inter']`}>

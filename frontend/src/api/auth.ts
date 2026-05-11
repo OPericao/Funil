@@ -1,6 +1,7 @@
 import { api } from "./client";
 import type {
-  AuthCredentials,
+  LoginCredentials,
+  RegisterCredentials,
   UpdateEmailInput,
   AuthTokenResponse,
   AuthUser,
@@ -8,14 +9,14 @@ import type {
   UpdateUsernameInput
 } from "../types/auth";
 
-export function register(credentials: AuthCredentials) {
+export function register(credentials: RegisterCredentials) {
   return api<AuthTokenResponse>("/auth/register", {
     method: "POST",
     body: JSON.stringify(credentials)
   });
 }
 
-export function login(credentials: AuthCredentials) {
+export function login(credentials: LoginCredentials) {
   return api<AuthTokenResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify(credentials)

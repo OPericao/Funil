@@ -2,7 +2,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { validatePassword, validateUsername } from "../../features/auth/formValidation";
 import { useI18n } from "../../i18n/I18nProvider";
-import type { AuthCredentials } from "../../types/auth";
+import type { LoginCredentials } from "../../types/auth";
 import { Button, buttonClass } from "../ui/Button";
 import { ArrowLongLeftIcon } from "../ui/icons";
 import { errorTextClass, fieldLabelClass, inputClass, pageTitleClass } from "../ui/styles";
@@ -11,7 +11,7 @@ import "../../styles/tailwind.css";
 type LoginFormProps = {
   submitting: boolean;
   error: string | null;
-  onSubmit: (credentials: AuthCredentials) => Promise<void> | void;
+  onSubmit: (credentials: LoginCredentials) => Promise<void> | void;
 };
 
 export function LoginForm({ submitting, error, onSubmit }: LoginFormProps) {

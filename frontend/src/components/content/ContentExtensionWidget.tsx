@@ -140,6 +140,10 @@ export function ContentExtensionWidget({ onLogout }: ContentExtensionWidgetProps
         onLogout();
         return;
       }
+      if (isApiError(requestError) && requestError.status === 413) {
+        setInboxError(t("common.uploadTooLarge"));
+        return;
+      }
       setInboxError(readErrorMessage(requestError, t("common.unexpectedError")));
     } finally {
       setInboxSubmitting(false);

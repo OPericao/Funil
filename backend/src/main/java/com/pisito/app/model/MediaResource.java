@@ -2,6 +2,7 @@ package com.pisito.app.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 @Entity
@@ -16,6 +17,10 @@ public class MediaResource extends Resource {
 
     @Column(name = "mime_type", length = 120)
     private String mimeType;
+
+    @Lob
+    @Column(name = "extracted_text")
+    private String extractedText;
 
     public MediaResource() {
         setType(ResourceType.MEDIA);
@@ -43,5 +48,13 @@ public class MediaResource extends Resource {
 
     public void setMimeType(String mimeType) {
         this.mimeType = mimeType;
+    }
+
+    public String getExtractedText() {
+        return extractedText;
+    }
+
+    public void setExtractedText(String extractedText) {
+        this.extractedText = extractedText;
     }
 }

@@ -18,6 +18,9 @@ public class CreateMediaResourceRequest {
     @Size(max = 120)
     private String mimeType;
 
+    @Size(max = 12000)
+    private String extractedText;
+
     public String getTitle() {
         return title;
     }
@@ -48,6 +51,14 @@ public class CreateMediaResourceRequest {
 
     public void setMimeType(String mimeType) {
         this.mimeType = mimeType;
+    }
+
+    public String getExtractedText() {
+        return extractedText;
+    }
+
+    public void setExtractedText(String extractedText) {
+        this.extractedText = extractedText;
     }
 }
 

@@ -4,7 +4,8 @@ public record UploadFileResponse(
     String path,
     String fileName,
     String mimeType,
-    long size
+    long size,
+    String extractedText
 ) {
 }
 

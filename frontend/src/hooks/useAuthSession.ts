@@ -3,7 +3,8 @@ import { getMe, login, register, updateEmail, updatePassword, updateUsername } f
 import { clearAccessToken, getAccessToken, setAccessToken } from "../api/client";
 import { useI18n } from "../i18n/I18nProvider";
 import type {
-  AuthCredentials,
+  LoginCredentials,
+  RegisterCredentials,
   AuthTokenResponse,
   AuthUser,
   UpdateEmailInput,
@@ -75,12 +76,12 @@ export function useAuthSession() {
   );
 
   const loginUser = useCallback(
-    async (credentials: AuthCredentials) => executeAuth(() => login(credentials)),
+    async (credentials: LoginCredentials) => executeAuth(() => login(credentials)),
     [executeAuth]
   );
 
   const registerUser = useCallback(
-    async (credentials: AuthCredentials) => executeAuth(() => register(credentials)),
+    async (credentials: RegisterCredentials) => executeAuth(() => register(credentials)),
     [executeAuth]
   );
 

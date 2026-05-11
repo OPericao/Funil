@@ -79,6 +79,7 @@ export type CreateEntryResourceInput = {
   storageKey?: string;
   fileName?: string;
   mimeType?: string;
+  extractedText?: string;
 };
 
 export type CreateEntryInput = {
@@ -103,6 +104,7 @@ export type CreateMediaResourceInput = {
   storageKey: string;
   fileName?: string;
   mimeType?: string;
+  extractedText?: string;
 };
 
 export type UploadFileResult = {
@@ -110,6 +112,7 @@ export type UploadFileResult = {
   fileName: string;
   mimeType: string;
   size: number;
+  extractedText?: string | null;
 };
 
 export type EntryRelationshipItem = {

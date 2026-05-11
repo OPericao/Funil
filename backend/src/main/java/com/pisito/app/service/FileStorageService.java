@@ -19,9 +19,14 @@ import java.util.UUID;
 public class FileStorageService {
 
     private final Path uploadRootPath;
+    private final FileTextExtractionService fileTextExtractionService;
 
-    public FileStorageService(@Value("${app.upload.dir:uploads}") String uploadDir) {
+    public FileStorageService(
+        @Value("${app.upload.dir:uploads}") String uploadDir,
+        FileTextExtractionService fileTextExtractionService
+    ) {
         this.uploadRootPath = Paths.get(uploadDir).toAbsolutePath().normalize();
+        this.fileTextExtractionService = fileTextExtractionService;
     }
 
     public UploadFileResponse store(MultipartFile file) {
@@ -54,7 +59,40 @@ public class FileStorageService {
 
         String mimeType = StringUtils.hasText(file.getContentType()) ? file.getContentType() : "application/octet-stream";
         String publicPath = "/uploads/" + storedName;
-        return new UploadFileResponse(publicPath, originalName, mimeType, file.getSize());
+        return new UploadFileResponse(publicPath, originalName, mimeType, file.getSize(), null);
+    }
+
+    public String extractStoredText(String storageKey, String fileName, String mimeType) {
+        Path storedPath = resolveStoragePath(storageKey);
+        return fileTextExtractionService.extractText(storedPath, fileName, mimeType);
+    }
+
+    private Path resolveStoragePath(String storageKey) {
+        String normalizedKey = trimStorageKey(storageKey);
+        if (!StringUtils.hasText(normalizedKey)) {
+            return null;
+        }
+
+        Path targetPath = uploadRootPath.resolve(normalizedKey).normalize();
+        if (!targetPath.startsWith(uploadRootPath)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid storage key");
+        }
+        return targetPath;
+    }
+
+    private String trimStorageKey(String storageKey) {
+        if (!StringUtils.hasText(storageKey)) {
+            return null;
+        }
+        String normalized = storageKey.trim();
+        if (normalized.startsWith("/api/uploads/")) {
+            normalized = normalized.substring("/api/uploads/".length());
+        } else if (normalized.startsWith("/uploads/")) {
+            normalized = normalized.substring("/uploads/".length());
+        } else if (normalized.startsWith("uploads/")) {
+            normalized = normalized.substring("uploads/".length());
+        }
+        return normalized.trim();
     }
 
     private String sanitizeFileName(String fileName) {

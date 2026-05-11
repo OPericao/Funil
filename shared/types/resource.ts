@@ -35,6 +35,7 @@ export type CreateEntryResourceInput = {
   storageKey?: string;
   fileName?: string;
   mimeType?: string;
+  extractedText?: string;
 };
 
 export type CreateEntryInput = {

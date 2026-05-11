@@ -47,6 +47,7 @@ public class AuthService {
         User user = new User();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(rawPassword));
+        user.setEmail(normalizeOptionalEmail(request.getEmail()));
 
         User savedUser = userRepository.save(user);
         return toTokenResponse(savedUser);
@@ -161,6 +162,13 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "email length must be at most 120 chars");
         }
         return normalized;
+    }
+
+    private String normalizeOptionalEmail(String email) {
+        if (!StringUtils.hasText(email)) {
+            return null;
+        }
+        return normalizeEmail(email);
     }
 
     private AuthUserResponse toResponse(User user) {

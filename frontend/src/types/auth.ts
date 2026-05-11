@@ -1,8 +1,14 @@
 export type AuthMode = "login" | "register";
 
-export type AuthCredentials = {
+export type LoginCredentials = {
   username: string;
   password: string;
+};
+
+export type RegisterCredentials = {
+  username: string;
+  password: string;
+  email?: string;
 };
 
 export type UpdateUsernameInput = {

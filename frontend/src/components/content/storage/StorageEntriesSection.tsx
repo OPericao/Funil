@@ -1188,14 +1188,13 @@ export function StorageEntriesSection({
       : "scale-[0.96] opacity-80"
     : "scale-[0.985] opacity-95";
 
-  function renderRelatedStack(entriesToRender: EntryItem[], side: "left" | "right", scaleClass: string, title: string) {
+  function renderRelatedStack(entriesToRender: EntryItem[], side: "left" | "right", scaleClass: string) {
     return (
       <div
         className={`hidden w-[240px] shrink-0 flex-col gap-3 transform-gpu transition-all duration-300 ease-out lg:flex ${scaleClass} ${
           entriesToRender.length === 0 ? "opacity-60" : ""
         }`}
       >
-        <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-ink-500">{title}</p>
         {entriesToRender.length === 0 ? (
           <div className="rounded-[24px] border border-white/45 bg-white/35 px-4 py-4 text-xs text-ink-600 shadow-[0_10px_26px_rgba(15,23,42,0.06)] backdrop-blur-[18px]">
             {t("storage.noRelatedEntries")}
@@ -1638,7 +1637,7 @@ export function StorageEntriesSection({
             <div
               className={`mx-auto flex w-full max-w-[1120px] items-center justify-center gap-3 transform-gpu transition-transform duration-300 ease-out ${carouselTranslateClass}`}
             >
-            {renderRelatedStack(leftRelatedEntries, "left", leftCardScaleClass, t("storage.relatedLeft"))}
+            {renderRelatedStack(leftRelatedEntries, "left", leftCardScaleClass)}
 
             <div
               className={`flex max-h-[calc(100vh-2rem)] w-full max-w-[calc(100vw-2rem)] shrink-0 flex-col overflow-hidden transform-gpu transition-all duration-300 ease-out md:max-w-[560px] ${centerCardScaleClass}`}
@@ -1681,7 +1680,7 @@ export function StorageEntriesSection({
               </div>
             </div>
 
-            {renderRelatedStack(rightRelatedEntries, "right", rightCardScaleClass, t("storage.relatedRight"))}
+            {renderRelatedStack(rightRelatedEntries, "right", rightCardScaleClass)}
             </div>
           </div>
         </div>

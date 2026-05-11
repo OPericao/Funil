@@ -9,7 +9,7 @@ import { ContentExtensionWidget } from "./components/content/ContentExtensionWid
 import { ContentInbox } from "./components/content/ContentInbox";
 import Iridescence from "./components/ui/Iridescence";
 import { useAuthSession } from "./hooks/useAuthSession";
-import type { AuthCredentials } from "./types/auth";
+import type { LoginCredentials, RegisterCredentials } from "./types/auth";
 
 function App() {
   const navigate = useNavigate();
@@ -17,7 +17,7 @@ function App() {
   const protectedInboxPaths = ["/inbox", "/explore", "/library", "/relationship-graph", "/profile"] as const;
 
   const onLoginSubmit = useCallback(
-    async (credentials: AuthCredentials) => {
+    async (credentials: LoginCredentials) => {
       const success = await auth.loginUser(credentials);
       if (success) {
         navigate("/inbox", { replace: true });
@@ -27,7 +27,7 @@ function App() {
   );
 
   const onRegisterSubmit = useCallback(
-    async (credentials: AuthCredentials) => {
+    async (credentials: RegisterCredentials) => {
       const success = await auth.registerUser(credentials);
       if (success) {
         navigate("/inbox", { replace: true });

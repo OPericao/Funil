@@ -180,6 +180,7 @@ public class EntrySemanticIndexService {
                 appendLine(lines, "Archivo", mediaResource.getFileName());
                 appendLine(lines, "Mime", mediaResource.getMimeType());
                 appendLine(lines, "Ruta", mediaResource.getStorageKey());
+                appendLine(lines, "Texto extraido", mediaResource.getExtractedText());
             }
         }
 
@@ -211,6 +212,7 @@ public class EntrySemanticIndexService {
                 appendEmbeddingLine(lines, "Contenido", truncateForEmbedding(linkResource.getContentPreview(), 700), 1);
             } else if (resource instanceof MediaResource mediaResource) {
                 appendEmbeddingLine(lines, "Archivo", truncateForEmbedding(mediaResource.getFileName(), 220), 1);
+                appendEmbeddingLine(lines, "Contenido", truncateForEmbedding(mediaResource.getExtractedText(), 900), 1);
             }
         }
 
@@ -258,6 +260,7 @@ public class EntrySemanticIndexService {
                 parts.add(truncateForEmbedding(linkResource.getContentPreview(), 400));
             } else if (resource instanceof MediaResource mediaResource) {
                 parts.add(truncateForEmbedding(mediaResource.getFileName(), 120));
+                parts.add(truncateForEmbedding(mediaResource.getExtractedText(), 400));
             }
         }
 
